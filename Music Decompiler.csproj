@@ -48,6 +48,8 @@
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Complex.cs" />
+    <Compile Include="FFT.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>
