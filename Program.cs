@@ -42,32 +42,45 @@ namespace MD
             int s = AL.GenSource();
 
             bool playing = false;
-            byte[] data = new byte[65536];
-            Complex[] cdata = new Complex[data.Length / 4];
-            Complex[] ndata = new Complex[data.Length / 4];
+            byte[] idata = new byte[65536];
+            byte[] odata = new byte[idata.Length / 2];
+            Complex[] cdata = new Complex[idata.Length / 4];
+            Complex[] ndata = new Complex[idata.Length / 4];
             while (true)
             {
 
-                int amount = mstr.Read(data, 0, data.Length);
-                Console.WriteLine("WROTE: " + amount.ToString());
+                int amount = mstr.Read(idata, 0, idata.Length);
+                Console.WriteLine("WROTE: " + amount.ToString()); 
 
                 for(int t = 0; t < amount / 4; t++)
                 {
-                    cdata[t] = (double)data[t * 4 + 1] / 256.0;
+                    short samp = BitConverter.ToInt16(idata, t * 4);
+                    cdata[t].Real = (double)samp / 65536.0;
                 }
 
                 // Fourier transform
-                if (amount == data.Length)
+                if (amount == idata.Length)
                 {
                     FFT.OnArray(false, cdata, ndata, cdata.Length);
+                    double samplefreq = mstr.Frequency;
+                    for (int t = 0; t < ndata.Length; t++)
+                    {
+                        double actfreq = FFT.AbsoluteFrequency(t, ndata.Length, samplefreq);
+                        if (actfreq < 1000.0 || actfreq > 3000.0)
+                        {
+                            ndata[t] = 0.0;
+                        }
+                    }
                     FFT.OnArray(true, ndata, cdata, cdata.Length);
                 }
 
                 // Data fix
                 for (int t = 0; t < cdata.Length; t++)
                 {
-                    byte h = (byte)(cdata[t].Real * 255.0);
-                    data[t * 2 + 1] = h;
+                    double dat = cdata[t].Real;
+                    byte[] bytes = BitConverter.GetBytes((short)(dat * 65536.0));
+                    odata[t * 2 + 0] = bytes[0];
+                    odata[t * 2 + 1] = bytes[1];
                 }
 
                 if (mstr.Position == mstr.Length)
@@ -76,7 +89,7 @@ namespace MD
                 }
 
                 int buf = AL.GenBuffer();
-                AL.BufferData<byte>(buf, ALFormat.Mono16, data, data.Length / 2, mstr.Frequency);
+                AL.BufferData<byte>(buf, ALFormat.Mono16, odata, odata.Length, mstr.Frequency);
                 AL.SourceQueueBuffer(s, buf);
 
                 if (!playing)

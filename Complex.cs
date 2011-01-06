@@ -40,6 +40,17 @@ namespace MD
         }
 
         /// <summary>
+        /// Gets the argument of the complex number.
+        /// </summary>
+        public double Argument
+        {
+            get 
+            { 
+                return Math.Atan2(this.Imag, this.Real); 
+            }
+        }
+
+        /// <summary>
         /// Get the square of the absolute value of this complex number.
         /// </summary>
         public double SquareAbs
@@ -68,7 +79,7 @@ namespace MD
         {
             get
             {
-                return new Complex(this.Real - this.Imag, this.Real);
+                return new Complex(-this.Imag, this.Real);
             }
         }
 
