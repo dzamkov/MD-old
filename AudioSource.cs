@@ -74,6 +74,93 @@ namespace MD
     }
 
     /// <summary>
+    /// An audio source stored in RAM in chunks.
+    /// </summary>
+    public class MemoryAudioSource : AudioSource
+    {
+        public MemoryAudioSource(int SampleRate, ALFormat Format, List<byte[]> Chunks, int ChunkSize, int Size)
+        {
+            this._SampleRate = SampleRate;
+            this._Format = Format;
+            this._ChunkSize = ChunkSize;
+            this._Chunks = Chunks;
+            this._Size = Size;
+        }
+
+        public override void Read(int Position, int Amount, byte[] Output, int Offset)
+        {
+            int bps = this.BytesPerSample;
+            int cpos = Position % this._ChunkSize;
+            int chunk = Position / this._ChunkSize;
+            while (Amount > 0)
+            {
+                byte[] chunkdata = this._Chunks[chunk];
+                if (Amount > this._ChunkSize)
+                {
+                    int dif = this._ChunkSize - cpos;
+                    for (int t = 0; t < dif * bps; t++)
+                    {
+                        Output[Offset + t] = chunkdata[cpos * bps + t];
+                    }
+                    Amount -= dif;
+                    Offset += dif;
+                    chunk++;
+                    cpos = 0;
+                }
+                else
+                {
+                    for (int t = 0; t < Amount * bps; t++)
+                    {
+                        Output[Offset + t] = chunkdata[cpos * bps + t];
+                    }
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the amount of samples stored in a chunk.
+        /// </summary>
+        public int ChunkSize
+        {
+            get
+            {
+                return this._ChunkSize;
+            }
+        }
+
+        public override int Size
+        {
+            get
+            {
+                return this._Size;
+            }
+        }
+
+        public override int SampleRate
+        {
+            get
+            {
+                return this._SampleRate;
+            }
+        }
+
+        public override ALFormat Format
+        {
+            get
+            {
+                return this._Format;
+            }
+        }
+
+        private int _SampleRate;
+        private ALFormat _Format;
+        private int _Size;
+        private int _ChunkSize;
+        private List<byte[]> _Chunks;
+    }
+
+    /// <summary>
     /// An audio feed that takes data from an audio source. The source will be looped.
     /// </summary>
     public class AudioSourcePlayer : AudioFeed

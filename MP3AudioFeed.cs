@@ -33,20 +33,47 @@ namespace MD
             this._Stream.Seek(0, SeekOrigin.Begin);
         }
 
+        /// <summary>
+        /// Brings the feed back to its begining.
+        /// </summary>
+        public void Reset()
+        {
+            this._Stream.Seek(0, SeekOrigin.Begin);
+        }
+
+        /// <summary>
+        /// Copies this mp3 stream to an audio source with the specified chunk size.
+        /// </summary>
+        public MemoryAudioSource Copy(int ChunkSize, int MaxSize)
+        {
+            this.Reset();
+            List<byte[]> chunks = new List<byte[]>();
+            int len = 0;
+            int bps = this.BytesPerSample;
+            while (this._Stream.Position < this._Stream.Length && len < MaxSize)
+            {
+                byte[] chunk = new byte[ChunkSize * bps];
+                len += this._Stream.Read(chunk, 0, ChunkSize * bps) / bps;
+                chunks.Add(chunk);
+            }
+            return new MemoryAudioSource(this.SampleRate, this.Format, chunks, ChunkSize, len > MaxSize ? MaxSize : len);
+        }
+
+        /// <summary>
+        /// Copies all mp3 data to an audio source.
+        /// </summary>
+        public MemoryAudioSource Copy(int ChunkSize)
+        {
+            return this.Copy(ChunkSize, int.MaxValue);
+        }
+
         public override int Read(int Amount, byte[] Output, int Offset)
         {
             int bps = this.BytesPerSample;
             if (this._Stream.Position < this._Stream.Length)
             {
                 int amount = 0;
-                try
-                {
-                    amount = this._Stream.Read(Output, Offset, Amount * bps);
-                }
-                catch (IndexOutOfRangeException)
-                {
-
-                }
+                amount = this._Stream.Read(Output, Offset, Amount * bps);
                 return amount / bps;
             }
             else

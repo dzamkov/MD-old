@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
+using System.Threading;
 
 using OpenTK.Audio;
 using OpenTK.Audio.OpenAL;
@@ -34,7 +35,17 @@ namespace MD
                 }
             }
 
-            AudioFeed.Play(new MP3AudioFeed(file), 4096, 2);
+            Thread t = new Thread(delegate()
+            {
+                AudioFeed.Play(new MP3AudioFeed(file).Copy(4096, 65536 * 4).Play, 4096, 2);
+            });
+            t.IsBackground = true;
+            t.Start();
+
+            while (true)
+            {
+                Application.DoEvents();
+            }
         }
     }
 }
