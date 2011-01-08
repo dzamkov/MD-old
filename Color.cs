@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using OpenTK;
 using OpenTK.Graphics;
 
-namespace Driftoid
+namespace MD
 {
     /// <summary>
     /// A color, as stolen from many of my previous projects. Represents a color including alpha.
@@ -132,5 +132,68 @@ namespace Driftoid
         public double G;
         public double B;
         public double A;
+    }
+
+    /// <summary>
+    /// A mapping of values between 0.0 and 1.0 to colors.
+    /// </summary>
+    public class Gradient
+    {
+        public Gradient(Color First, Color Last)
+        {
+            this._First = First;
+            this._Last = Last;
+            this._Stops = new LinkedList<Stop>();
+        }
+
+        public Gradient(Color First, Color Last, IEnumerable<Stop> OrderedStops)
+        {
+            this._First = First;
+            this._Last = Last;
+            this._Stops = new LinkedList<Stop>(OrderedStops);
+        }
+
+        /// <summary>
+        /// Gets a color for the specified value.
+        /// </summary>
+        public Color GetColor(double Value)
+        {
+            Stop prev = new Stop(this._First, 0.0);
+            foreach (Stop s in this._Stops)
+            {
+                if (Value < s.Value)
+                {
+                    return Color.Mix(prev.Color, s.Color, (Value - prev.Value) / (s.Value - prev.Value));
+                }
+                prev = s;
+            }
+            return Color.Mix(prev.Color, this._Last, (Value - prev.Value) / (1.0 - prev.Value));
+        }
+
+        /// <summary>
+        /// A sample point of the gradient.
+        /// </summary>
+        public struct Stop
+        {
+            public Stop(Color Color, double Value)
+            {
+                this.Color = Color;
+                this.Value = Value;
+            }
+
+            /// <summary>
+            /// The color at the stop.
+            /// </summary>
+            public Color Color;
+
+            /// <summary>
+            /// The value the stop is at.
+            /// </summary>
+            public double Value;
+        }
+
+        private LinkedList<Stop> _Stops;
+        private Color _First;
+        private Color _Last;
     }
 }

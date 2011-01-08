@@ -1,6 +1,6 @@
 ﻿namespace MD
 {
-    partial class Spectrum
+    partial class Spectrogram
     {
         /// <summary> 
         /// Required designer variable.
@@ -28,8 +28,17 @@
         /// </summary>
         private void InitializeComponent()
         {
-            components = new System.ComponentModel.Container();
+            this.SuspendLayout();
+            // 
+            // Spectrogram
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.BackColor = System.Drawing.Color.White;
+            this.BackgroundImageLayout = System.Windows.Forms.ImageLayout.Stretch;
+            this.Name = "Spectrogram";
+            this.ResumeLayout(false);
+
         }
 
         #endregion

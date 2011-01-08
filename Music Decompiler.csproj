@@ -21,6 +21,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -64,16 +65,20 @@
     </Compile>
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
-    <Compile Include="Spectrum.cs">
+    <Compile Include="Spectrogram.cs">
       <SubType>UserControl</SubType>
     </Compile>
-    <Compile Include="Spectrum.Designer.cs">
-      <DependentUpon>Spectrum.cs</DependentUpon>
+    <Compile Include="Spectrogram.Designer.cs">
+      <DependentUpon>Spectrogram.cs</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Spectrogram.resx">
+      <DependentUpon>Spectrogram.cs</DependentUpon>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
   </ItemGroup>
 </Project>

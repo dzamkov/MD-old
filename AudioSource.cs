@@ -21,6 +21,33 @@ namespace MD
         public abstract void Read(int Position, int Amount, byte[] Output, int Offset);
 
         /// <summary>
+        /// Reads some data (as double samples) into the specified output array. One double is used for each channel of a sample. Data ranges from -1.0 to 1.0.
+        /// </summary>
+        public virtual void ReadDouble(int Position, int Amount, double[] Output, int Offset)
+        {
+            switch (this.Format)
+            {
+                case ALFormat.Mono16:
+                    byte[] data = new byte[Amount * 2];
+                    this.Read(Position, Amount, data, 0);
+                    for (int t = 0; t < Amount; t++)
+                    {
+                        Output[t + Offset] = (double)BitConverter.ToInt16(data, t * 2) / 32768.0;
+                    }
+                    return;
+                case ALFormat.Stereo16:
+                    data = new byte[Amount * 4];
+                    this.Read(Position, Amount, data, 0);
+                    for (int t = 0; t < Amount * 2; t++)
+                    {
+                        Output[t + Offset] = (double)BitConverter.ToInt16(data, t * 2) / 32768.0;
+                    }
+                    return;
+            }
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
         /// Gets the size of the audio source in samples.
         /// </summary>
         public abstract int Size { get; }
@@ -34,6 +61,17 @@ namespace MD
         /// Gets the format of the audio in the audio source.
         /// </summary>
         public abstract ALFormat Format { get; }
+
+        /// <summary>
+        /// Gets the amount of channels this audio source has.
+        /// </summary>
+        public int Channels
+        {
+            get
+            {
+                return GetChannels(this.Format);
+            }
+        }
 
         /// <summary>
         /// Gets the amount of bytes in a sample of this audio source.
@@ -58,6 +96,43 @@ namespace MD
         }
 
         /// <summary>
+        /// Gets the amount of channels in a sample of the specified format.
+        /// </summary>
+        public static int GetChannels(ALFormat Format)
+        {
+            switch (Format)
+            {
+                case ALFormat.Stereo16: return 2;
+                case ALFormat.Stereo8: return 2;
+                case ALFormat.Mono16: return 1;
+                case ALFormat.Mono8: return 1;
+            }
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Reads silence to the specified byte array.
+        /// </summary>
+        public static void ReadSilence(ALFormat Format, int Amount, byte[] Data, int Offset)
+        {
+            switch (Format)
+            {
+                case ALFormat.Stereo16:
+                    for (int t = 0; t < Amount * 4; t++)
+                    {
+                        Data[t + Offset] = 0;
+                    }
+                    break;
+                case ALFormat.Mono16:
+                    for (int t = 0; t < Amount * 2; t++)
+                    {
+                        Data[t + Offset] = 0;
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
         /// Gets the amount of bytes in a sample of the specified format.
         /// </summary>
         public static int GetBytesPerSample(ALFormat Format)
@@ -69,7 +144,7 @@ namespace MD
                 case ALFormat.Mono16: return 2;
                 case ALFormat.Mono8: return 1;
             }
-            return -1;
+            throw new NotImplementedException();
         }
     }
 
@@ -158,6 +233,64 @@ namespace MD
         private int _Size;
         private int _ChunkSize;
         private List<byte[]> _Chunks;
+    }
+
+    /// <summary>
+    /// Pads (or truncates) another source to a certain length.
+    /// </summary>
+    public class PaddedSource : AudioSource
+    {
+        public PaddedSource(AudioSource Source, int PaddedSize)
+        {
+            this._Source = Source;
+            this._PaddedSize = PaddedSize;
+        }
+
+        public override void Read(int Position, int Amount, byte[] Output, int Offset)
+        {
+            int pad = (Position + Amount) - this._Source.Size;
+            if (pad > 0)
+            {
+                if (pad < Amount)
+                {
+                    int amountread = Amount - pad;
+                    this._Source.Read(Position, amountread, Output, Offset);
+                    Offset += amountread;
+                }
+                AudioSource.ReadSilence(this._Source.Format, pad, Output, Offset);
+            }
+            else
+            {
+                this._Source.Read(Position, Amount, Output, Offset);
+            }
+        }
+
+        public override int SampleRate
+        {
+            get
+            {
+                return this._Source.SampleRate;
+            }
+        }
+
+        public override int Size
+        {
+            get
+            {
+                return this._PaddedSize;
+            }
+        }
+
+        public override ALFormat Format
+        {
+            get
+            {
+                return this._Source.Format;
+            }
+        }
+
+        private AudioSource _Source;
+        private int _PaddedSize;
     }
 
     /// <summary>

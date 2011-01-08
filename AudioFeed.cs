@@ -32,7 +32,18 @@ namespace MD
         public abstract ALFormat Format { get; }
 
         /// <summary>
-        /// Gets the amount of bytes in a sample of this audio source.
+        /// Gets the amount of channels this audio feed has.
+        /// </summary>
+        public int Channels
+        {
+            get
+            {
+                return AudioSource.GetChannels(this.Format);
+            }
+        }
+
+        /// <summary>
+        /// Gets the amount of bytes in a sample of this audio feed.
         /// </summary>
         public int BytesPerSample
         {
@@ -50,7 +61,7 @@ namespace MD
     {
         public AudioOutput(AudioFeed Source, int BufferSize, int BufferAmount)
         {
-            this._Source = Source;
+            this._Feed = Source;
             this._BufferSize = BufferSize;
             this._BufferAmount = BufferAmount;
             this._Init();
@@ -64,8 +75,8 @@ namespace MD
 
         private void _Init()
         {
-            this._ALSource = AL.GenSource();
-            int bps = this._Source.BytesPerSample;
+            this._Source = AL.GenSource();
+            int bps = this._Feed.BytesPerSample;
             this._Data = new byte[this._BufferSize * bps];
             this._BuffersPlaying = new LinkedList<int>();
             this._BuffersAvailable = new Stack<int>();
@@ -76,7 +87,7 @@ namespace MD
             }
 
             // Approximate wait time needed in the loop
-            this._WaitTime = (int)((double)this._Source.SampleRate / (double)this._BufferSize / (double)this._BufferAmount * 4.0);
+            this._WaitTime = (int)((double)this._Feed.SampleRate / (double)this._BufferSize / (double)this._BufferAmount * 4.0);
         }
 
         /// <summary>
@@ -86,9 +97,9 @@ namespace MD
         {
             if (!this._Playing)
             {
-                if (this._BuffersPlaying.Count > 0 && AL.GetSourceState(this._ALSource) != ALSourceState.Playing)
+                if (this._BuffersPlaying.Count > 0 && AL.GetSourceState(this._Source) != ALSourceState.Playing)
                 {
-                    AL.SourcePlay(this._ALSource);
+                    AL.SourcePlay(this._Source);
                 }
                 this._Playing = true;
                 this._Thread = new Thread(this._PlayLoop);
@@ -105,9 +116,9 @@ namespace MD
             if (this._Playing)
             {
                 this._Playing = false;
-                if (AL.GetSourceState(this._ALSource) != ALSourceState.Paused)
+                if (AL.GetSourceState(this._Source) != ALSourceState.Paused)
                 {
-                    AL.SourcePause(this._ALSource);
+                    AL.SourcePause(this._Source);
                 }
                 this._Thread.Join();
                 this._Thread = null;
@@ -116,21 +127,21 @@ namespace MD
 
         private void _PlayLoop()
         {
-            int bps = this._Source.BytesPerSample;
+            int bps = this._Feed.BytesPerSample;
             while (this._Playing)
             {
                 // Buffer data
                 while (this._BuffersAvailable.Count > 0)
                 {
-                    int amount = this._Source.Read(this._BufferSize, this._Data, 0);
+                    int amount = this._Feed.Read(this._BufferSize, this._Data, 0);
                     int buf = this._BuffersAvailable.Pop();
-                    AL.BufferData<byte>(buf, this._Source.Format, this._Data, amount * bps, this._Source.SampleRate);
-                    AL.SourceQueueBuffer(this._ALSource, buf);
+                    AL.BufferData<byte>(buf, this._Feed.Format, this._Data, amount * bps, this._Feed.SampleRate);
+                    AL.SourceQueueBuffer(this._Source, buf);
                     this._BuffersPlaying.AddLast(buf);
 
-                    if (this._Playing && AL.GetSourceState(this._ALSource) != ALSourceState.Playing)
+                    if (this._Playing && AL.GetSourceState(this._Source) != ALSourceState.Playing)
                     {
-                        AL.SourcePlay(this._ALSource);
+                        AL.SourcePlay(this._Source);
                     }
                 }
 
@@ -139,10 +150,10 @@ namespace MD
 
                 // Remove played buffers
                 int processed;
-                AL.GetSource(this._ALSource, ALGetSourcei.BuffersProcessed, out processed);
+                AL.GetSource(this._Source, ALGetSourcei.BuffersProcessed, out processed);
                 if (processed > 0)
                 {
-                    AL.SourceUnqueueBuffers(this._ALSource, processed);
+                    AL.SourceUnqueueBuffers(this._Source, processed);
                 }
                 while (processed > 0)
                 {
@@ -156,13 +167,13 @@ namespace MD
 
         private bool _Playing;
         private byte[] _Data;
-        private int _ALSource;
+        private int _Source;
         private int _WaitTime;
         LinkedList<int> _BuffersPlaying;
         Stack<int> _BuffersAvailable;
         private int _BufferSize;
         private int _BufferAmount;
-        private AudioFeed _Source;
+        private AudioFeed _Feed;
         private Thread _Thread;
     }
 }

@@ -28,23 +28,24 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.spectrum1 = new MD.Spectrum();
+            this.Spectrogram = new MD.Spectrogram();
             this.SuspendLayout();
             // 
-            // spectrum1
+            // Spectrogram
             // 
-            this.spectrum1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.spectrum1.Location = new System.Drawing.Point(0, 0);
-            this.spectrum1.Name = "spectrum1";
-            this.spectrum1.Size = new System.Drawing.Size(609, 550);
-            this.spectrum1.TabIndex = 0;
+            this.Spectrogram.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.Spectrogram.Location = new System.Drawing.Point(0, 0);
+            this.Spectrogram.Name = "Spectrogram";
+            this.Spectrogram.Size = new System.Drawing.Size(609, 550);
+            this.Spectrogram.Source = null;
+            this.Spectrogram.TabIndex = 0;
             // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(609, 550);
-            this.Controls.Add(this.spectrum1);
+            this.Controls.Add(this.Spectrogram);
             this.Name = "MainForm";
             this.Text = "MainForm";
             this.ResumeLayout(false);
@@ -53,6 +54,7 @@
 
         #endregion
 
-        private Spectrum spectrum1;
+        public Spectrogram Spectrogram;
+
     }
 }

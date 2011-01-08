@@ -36,23 +36,16 @@ namespace MD
             }
 
             AudioContext ac = new AudioContext();
-
-            AudioOutput ao = new AudioOutput(new MP3AudioFeed(file));
+            MP3AudioFeed af = new MP3AudioFeed(file);
+            MemoryAudioSource mas = af.Copy(65536 * 4, 65536 * 4);
+            af.Reset();
+            AudioOutput ao = new AudioOutput(af);
             ao.Play();
-            
-            while (true)
-            {
-                ConsoleKeyInfo ki = Console.ReadKey();
-                if (ki.Key == ConsoleKey.S)
-                {
-                    ao.Stop();
-                }
-                if (ki.Key == ConsoleKey.P)
-                {
-                    ao.Play();
-                }
-                Application.DoEvents();
-            }
+
+
+            MainForm mf = new MainForm();
+            mf.Spectrogram.Source = mas;
+            Application.Run(mf);
         }
     }
 }
