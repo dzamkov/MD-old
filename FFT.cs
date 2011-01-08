@@ -54,9 +54,17 @@ namespace MD
         /// <summary>
         /// Gets the absolute frequency a sample in the frequency domain data represents.
         /// </summary>
-        public static double AbsoluteFrequency(int Sample, int NumSamples, double SampleFrequency)
+        public static double GetFrequency(int Sample, int NumSamples, double SampleFrequency)
         {
-            return ((double)Sample / (double)NumSamples) * SampleFrequency;
+            return (double)Sample * SampleFrequency / (double)NumSamples;
+        }
+
+        /// <summary>
+        /// Gets the sample in the frequency domain that has the specified frequency.
+        /// </summary>
+        public static double GetSample(double Frequency, int NumSamples, double SampleFrequency)
+        {
+            return (double)NumSamples * Frequency / SampleFrequency;
         }
     }
 }

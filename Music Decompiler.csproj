@@ -45,11 +45,35 @@
     </Reference>
     <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
     <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AudioFeed.cs" />
+    <Compile Include="AudioSource.cs" />
+    <Compile Include="Color.cs" />
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
+    <Compile Include="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Spectrum.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Spectrum.Designer.cs">
+      <DependentUpon>Spectrum.cs</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>
