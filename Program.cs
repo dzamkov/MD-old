@@ -35,15 +35,22 @@ namespace MD
                 }
             }
 
-            Thread t = new Thread(delegate()
-            {
-                AudioFeed.Play(new MP3AudioFeed(file).Copy(4096, 65536 * 4).Play, 4096, 2);
-            });
-            t.IsBackground = true;
-            t.Start();
+            AudioContext ac = new AudioContext();
 
+            AudioOutput ao = new AudioOutput(new MP3AudioFeed(file));
+            ao.Play();
+            
             while (true)
             {
+                ConsoleKeyInfo ki = Console.ReadKey();
+                if (ki.Key == ConsoleKey.S)
+                {
+                    ao.Stop();
+                }
+                if (ki.Key == ConsoleKey.P)
+                {
+                    ao.Play();
+                }
                 Application.DoEvents();
             }
         }
