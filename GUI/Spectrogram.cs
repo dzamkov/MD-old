@@ -6,14 +6,14 @@ using System.Drawing.Imaging;
 using System.Text;
 using System.Windows.Forms;
 
-namespace MD
+namespace MD.GUI
 {
     public partial class Spectrogram : UserControl
     {
         public Spectrogram()
         {
             InitializeComponent();
-            this._WindowSize = 512;
+            this._WindowSize = 1024;
         }
 
         /// <summary>
@@ -87,10 +87,10 @@ namespace MD
 
             // Write
             byte* offset = (byte*)(BitData.Scan0.ToPointer()) + 3 * X;
-            double d = 1.0 / (double)(this._WindowSize);
+            double d = 2.0 / (double)(this._WindowSize);
             for (int t = 0; t < this._WindowSize; t++)
             {
-                double abs = NData[t].Abs / 5.0;
+                double abs = NData[t].Abs * d;
                 Color col = _Gradient.GetColor(abs);
                 offset[2] = (byte)(col.R * 255.0);
                 offset[1] = (byte)(col.G * 255.0);

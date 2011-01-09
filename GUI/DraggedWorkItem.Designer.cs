@@ -1,6 +1,6 @@
-﻿namespace MD
+﻿namespace MD.GUI
 {
-    partial class MainForm
+    partial class DraggedWorkItem
     {
         /// <summary>
         /// Required designer variable.
@@ -28,33 +28,28 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.Spectrogram = new MD.Spectrogram();
             this.SuspendLayout();
             // 
-            // Spectrogram
-            // 
-            this.Spectrogram.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.Spectrogram.Location = new System.Drawing.Point(0, 0);
-            this.Spectrogram.Name = "Spectrogram";
-            this.Spectrogram.Size = new System.Drawing.Size(609, 550);
-            this.Spectrogram.Source = null;
-            this.Spectrogram.TabIndex = 0;
-            // 
-            // MainForm
+            // DraggedWorkItem
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(609, 550);
-            this.Controls.Add(this.Spectrogram);
-            this.Name = "MainForm";
-            this.Text = "MainForm";
+            this.BackColor = System.Drawing.Color.White;
+            this.ClientSize = new System.Drawing.Size(284, 27);
+            this.ControlBox = false;
+            this.Enabled = false;
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
+            this.Name = "DraggedWorkItem";
+            this.Opacity = 0.75;
+            this.ShowIcon = false;
+            this.ShowInTaskbar = false;
+            this.TopMost = true;
+            this.TransparencyKey = System.Drawing.Color.White;
             this.ResumeLayout(false);
 
         }
 
         #endregion
-
-        public Spectrogram Spectrogram;
 
     }
 }
