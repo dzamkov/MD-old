@@ -8,7 +8,7 @@
     <ProjectGuid>{4E6E3DF2-49D7-46E1-BA98-7B2D1CB870DB}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Music_Decompiler</RootNamespace>
+    <RootNamespace>MD</RootNamespace>
     <AssemblyName>Music Decompiler</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -45,6 +45,7 @@
       <HintPath>.\Mp3Sharp.dll</HintPath>
     </Reference>
     <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
@@ -57,28 +58,10 @@
     <Compile Include="Color.cs" />
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
-    <Compile Include="GUI\DraggedWorkItem.cs">
-      <SubType>Form</SubType>
+    <Compile Include="GUI\GLWindow.cs" />
+    <Compile Include="GUI\GLPanel.cs">
     </Compile>
-    <Compile Include="GUI\DraggedWorkItem.Designer.cs">
-      <DependentUpon>DraggedWorkItem.cs</DependentUpon>
-    </Compile>
-    <Compile Include="GUI\MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="GUI\MainForm.Designer.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="GUI\Resources.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
-      <DependentUpon>Resources.resx</DependentUpon>
-    </Compile>
-    <Compile Include="GUI\WorkItem.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="GUI\WorkItem.Designer.cs">
-      <DependentUpon>WorkItem.cs</DependentUpon>
+    <Compile Include="GUI\Workspace.cs">
     </Compile>
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
@@ -88,41 +71,16 @@
     <Compile Include="GUI\Spectrogram.Designer.cs">
       <DependentUpon>Spectrogram.cs</DependentUpon>
     </Compile>
-    <Compile Include="GUI\Workspace.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="GUI\Workspace.Designer.cs">
-      <DependentUpon>Workspace.cs</DependentUpon>
-    </Compile>
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
+    <Compile Include="Vector.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="GUI\DraggedWorkItem.resx">
-      <DependentUpon>DraggedWorkItem.cs</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <EmbeddedResource Include="GUI\MainForm.resx">
-      <DependentUpon>MainForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="GUI\Resources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
     <EmbeddedResource Include="GUI\Spectrogram.resx">
       <DependentUpon>Spectrogram.cs</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <EmbeddedResource Include="GUI\WorkItem.resx">
-      <DependentUpon>WorkItem.cs</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <EmbeddedResource Include="GUI\Workspace.resx">
-      <DependentUpon>Workspace.cs</DependentUpon>
       <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">

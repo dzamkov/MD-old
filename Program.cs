@@ -23,14 +23,8 @@ namespace MD
         [STAThread]
         public static void Main(string[] Args)
         {
-            Application.EnableVisualStyles();
-
-            MainForm mf = new MainForm();
-            for (int t = 0; t < 20; t++ )
-            {
-                mf.Workspace.AddItem(new WorkItem());
-            }
-            Application.Run(mf);
+            GLWindow win = new GLWindow(null, null, "MD");
+            win.Run();
         }
     }
 }
