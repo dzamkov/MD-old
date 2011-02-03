@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 
+using WinForms = System.Windows.Forms;
+
 using OpenTK;
+using OpenTK.Audio;
 using OpenTKGUI;
 
 namespace MD.GUI
@@ -12,17 +15,10 @@ namespace MD.GUI
     public class MainWindow : HostWindow
     {
         public MainWindow()
-            : base(_BuildControl, "MD", 640, 480)
+            : base("MD", 640, 480)
         {
             this.WindowState = WindowState.Maximized;
 
-        }
-
-        /// <summary>
-        /// Builds controls for the main window.
-        /// </summary>
-        private static Control _BuildControl()
-        {
             // Menu items
             MenuItem[] menuitems = new MenuItem[]
             {
@@ -30,7 +26,21 @@ namespace MD.GUI
                 {
                     MenuItem.Create("Import", delegate
                     {
-                        
+                        using(var fd = new WinForms.OpenFileDialog())
+                        {
+                            fd.Filter = "MP3 Files |*.mp3";
+                            if (fd.ShowDialog() == WinForms.DialogResult.OK)
+                            {
+                                string file = fd.FileName;
+                                AudioContext ac = new AudioContext();
+                                AudioOutput ao = new AudioOutput(new MP3AudioFeed(file));
+                                ao.Play();
+                            }
+                            else
+                            {
+                                return;
+                            }
+                        }
                     })
                 })
             };
@@ -43,7 +53,13 @@ namespace MD.GUI
             // Main layer container
             LayerContainer lc = new LayerContainer(sc);
 
-            return lc;
+            this.Control = lc;
+        }
+
+        protected override void OnUpdateFrame(FrameEventArgs e)
+        {
+            WinForms.Application.DoEvents();
+            base.OnUpdateFrame(e);
         }
     }
 }
