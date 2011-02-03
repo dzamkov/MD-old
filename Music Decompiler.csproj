@@ -46,6 +46,10 @@
     </Reference>
     <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
     <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="OpenTKGUI, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\OpenTKGUI\bin\Release\OpenTKGUI.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
@@ -55,41 +59,13 @@
   <ItemGroup>
     <Compile Include="AudioFeed.cs" />
     <Compile Include="AudioSource.cs" />
-    <Compile Include="Color.cs" />
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
-    <Compile Include="GUI\GLWindow.cs" />
-    <Compile Include="GUI\GLPanel.cs">
-    </Compile>
-    <Compile Include="GUI\Workspace.cs">
-    </Compile>
+    <Compile Include="GUI\MainWindow.cs" />
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
-    <Compile Include="GUI\Spectrogram.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="GUI\Spectrogram.Designer.cs">
-      <DependentUpon>Spectrogram.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Properties\Resources.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
-      <DependentUpon>Resources.resx</DependentUpon>
-    </Compile>
-    <Compile Include="Vector.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="GUI\Spectrogram.resx">
-      <DependentUpon>Spectrogram.cs</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Properties\Resources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Resources\DownTriangle.png" />
+    <Folder Include="Properties\" />
   </ItemGroup>
 </Project>

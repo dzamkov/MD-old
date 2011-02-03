@@ -23,8 +23,8 @@ namespace MD
         [STAThread]
         public static void Main(string[] Args)
         {
-            GLWindow win = new GLWindow(null, null, "MD");
-            win.Run();
+            MainWindow mw = new MainWindow();
+            mw.Run(60.0);
         }
     }
 }
