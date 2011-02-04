@@ -62,8 +62,24 @@
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
     <Compile Include="GUI\MainWindow.cs" />
+    <Compile Include="GUI\WorkSpace.cs" />
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Res.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Res.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Res.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Res.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WorkItem.png" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />

@@ -41,13 +41,22 @@ namespace MD.GUI
                                 return;
                             }
                         }
+                    }),
+                    MenuItem.Create("Exit", delegate
+                    {
+                        this.Close();
                     })
                 })
             };
 
-            // Menu
+            // Workspace and main splitter
+            WorkSpace wks;
+            SplitContainer msc = new SplitContainer(Axis.Horizontal, WorkSpace.CreateScrollable(out wks), new Blank(Color.RGB(0.8, 0.8, 0.8)).WithBorder(0.0, 1.0, 1.0, 1.0));
+            msc.NearSize = 300.0;
+
+            // Menu and splitter
             Menu menu = new Menu(menuitems);
-            SplitContainer sc = new SplitContainer(Axis.Vertical, menu.WithBorder(0.0, 0.0, 0.0, 1.0), new Blank(Color.Transparent));
+            SplitContainer sc = new SplitContainer(Axis.Vertical, menu, msc);
             sc.NearSize = 30.0;
 
             // Main layer container
