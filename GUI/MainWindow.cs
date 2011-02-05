@@ -19,6 +19,9 @@ namespace MD.GUI
         {
             this.WindowState = WindowState.Maximized;
 
+            // Spectrogram
+            Spectrogram spect = this._Spectrogram = new Spectrogram();
+
             // Menu items
             MenuItem[] menuitems = new MenuItem[]
             {
@@ -33,7 +36,9 @@ namespace MD.GUI
                             {
                                 string file = fd.FileName;
                                 AudioContext ac = new AudioContext();
-                                AudioOutput ao = new AudioOutput(new MP3AudioFeed(file));
+                                MemoryAudioSource mas = new MP3AudioFeed(file).Copy(4096, 4096 * 100);
+                                spect.Source = mas;
+                                AudioOutput ao = new AudioOutput(mas.Play);
                                 ao.Play();
                             }
                             else
@@ -49,14 +54,9 @@ namespace MD.GUI
                 })
             };
 
-            // Workspace and main splitter
-            WorkSpace wks;
-            SplitContainer msc = new SplitContainer(Axis.Horizontal, WorkSpace.CreateScrollable(out wks), new Blank(Color.RGB(0.8, 0.8, 0.8)).WithBorder(0.0, 1.0, 1.0, 1.0));
-            msc.NearSize = 300.0;
-
             // Menu and splitter
             Menu menu = new Menu(menuitems);
-            SplitContainer sc = new SplitContainer(Axis.Vertical, menu, msc);
+            SplitContainer sc = new SplitContainer(Axis.Vertical, menu.WithBorder(0.0, 0.0, 0.0, 1.0), spect);
             sc.NearSize = 30.0;
 
             // Main layer container
@@ -70,5 +70,7 @@ namespace MD.GUI
             WinForms.Application.DoEvents();
             base.OnUpdateFrame(e);
         }
+
+        private Spectrogram _Spectrogram;
     }
 }

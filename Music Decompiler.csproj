@@ -62,7 +62,7 @@
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
     <Compile Include="GUI\MainWindow.cs" />
-    <Compile Include="GUI\WorkSpace.cs" />
+    <Compile Include="GUI\Spectrogram.cs" />
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Res.Designer.cs">
@@ -79,9 +79,7 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\WorkItem.png" />
-  </ItemGroup>
-  <ItemGroup>
     <Folder Include="Properties\" />
+    <Folder Include="Resources\" />
   </ItemGroup>
 </Project>

@@ -59,12 +59,5 @@ namespace MD {
                 resourceCulture = value;
             }
         }
-        
-        internal static System.Drawing.Bitmap WorkItem {
-            get {
-                object obj = ResourceManager.GetObject("WorkItem", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
     }
 }
