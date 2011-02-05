@@ -170,7 +170,7 @@ namespace MD
             while (Amount > 0)
             {
                 byte[] chunkdata = this._Chunks[chunk];
-                if (Amount > this._ChunkSize)
+                if (Amount + cpos > this._ChunkSize)
                 {
                     int dif = this._ChunkSize - cpos;
                     for (int t = 0; t < dif * bps; t++)

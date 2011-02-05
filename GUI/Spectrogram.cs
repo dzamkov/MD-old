@@ -20,16 +20,14 @@ namespace MD.GUI
                 Color.RGB(0.5, 0.0, 0.0),
                 new Gradient.Stop[]
                 {
-                    new Gradient.Stop(Color.RGB(0.6, 0.6, 0.6), 0.1),
-                    new Gradient.Stop(Color.RGB(0.2, 0.2, 1.0), 0.3),
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 1.0), 0.5),
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 0.0), 0.7),
-                    new Gradient.Stop(Color.RGB(1.0, 1.0, 0.0), 0.8),
-                    new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.9)
+                    new Gradient.Stop(Color.RGB(0.0, 1.0, 1.0), 0.35),
+                    new Gradient.Stop(Color.RGB(0.0, 1.0, 0.0), 0.5),
+                    new Gradient.Stop(Color.RGB(1.0, 1.0, 0.0), 0.6),
+                    new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
                 });
 
             this._DataRects = new LinkedList<_DataRect>();
-            this._Window = new Rectangle(0.0, 0.0, 0.5, 1000.0);
+            this._Window = new Rectangle(0.0, 0.0, 10.0, 3000.0);
         }
 
         /// <summary>
@@ -45,8 +43,10 @@ namespace MD.GUI
             {
                 this._Source = value;
 
-                _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 0.5, 1000.0), 512, 256));
-                data.Fill(value, this._Gradient, 0.01);
+                _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 10.0, 3000.0), 512, 1024));
+
+                double[] win = _CreateGaborWindow(0.024, value.SampleRate, 2048);
+                data.Fill(value, this._Gradient, win);
                 this._DataRects.AddLast(data);
             }
         }
@@ -81,9 +81,24 @@ namespace MD.GUI
             GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.Clamp);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.Clamp);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
             return id;
+        }
+
+        /// <summary>
+        /// Creates a window for the gabor transform.
+        /// </summary>
+        private static double[] _CreateGaborWindow(double Scale, int SampleRate, int Size)
+        {
+            double[] win = new double[Size];
+            double iscale = 1.0 / Scale;
+            for (int t = 0; t < Size; t++)
+            {
+                double exp = ((double)t / SampleRate) * iscale;
+                win[t] = Math.Exp(-exp * exp);
+            }
+            return win;
         }
 
         /// <summary>
@@ -104,19 +119,18 @@ namespace MD.GUI
             }
 
             /// <summary>
-            /// Fills the data rectangle with data from an audio source using the gabor transform.
+            /// Fills the data rectangle with data from an audio source using a transform with a symmetric, power-of-2-sized window.
             /// </summary>
-            public void Fill(AudioSource Source, Gradient Gradient, double GaussScale)
+            public void Fill(AudioSource Source, Gradient Gradient, double[] Window)
             {
                 int w = this.TimeResolution;
                 int h = this.FrequencyResolution;
 
                 // Calculate sizes
-                double gaussfalloff = 0.1913 * GaussScale;
                 int sr = Source.SampleRate;
                 int c = Source.Channels;
                 int ts = (int)(sr * this.Area.Size.X);
-                int pad = (int)(sr * gaussfalloff);
+                int pad = Window.Length;
                 int fs = ts + pad + pad;
 
                 // Read required data
@@ -138,25 +152,26 @@ namespace MD.GUI
                 Source.ReadDouble(start, readsize, sdat, offset);
 
                 // Begin filling data
+                Complex[] fftoutput = new Complex[Window.Length * 2];
+                double d = 0.5 / fftoutput.Length;
+
                 byte[] dat = new byte[w * h * 3];
                 for (int x = 0; x < w; x++)
                 {
                     int midsample = pad + (int)((x / (double)w) * ts);
+                    _WindowedSignal ws = new _WindowedSignal(Window, sdat, midsample, c);
+                    FFT.OnSignal<_WindowedSignal>(ws, false, fftoutput, fftoutput.Length);
+
                     for (int y = 0; y < h; y++)
                     {
-                        Complex val = new Complex(0.0, 0.0);
-                        double freq = (Area.Location.Y + Area.Size.Y * ((h - y - 1) / (double)h)) / (double)sr;
-                        double gausssize = 1.0 / (sr * GaussScale);
-                        for (int z = -pad + 1; z < pad; z++)
-                        {
-                            int sample = z + midsample;
-                            double sampleval = sdat[sample * c];
-                            double gaussdis = Math.Abs(z) * gausssize;
-                            double exponent = -Math.PI * 2.0 * freq * sample;
-                            val += Math.Exp(-Math.PI * gaussdis * gaussdis) * new Complex(0.0, exponent).Exp * sampleval;
-                        }
+                        double freq = this.Area.Location.Y + this.Area.Size.Y * ((h - y - 1) / (double)h);
+                        double fftsamp = FFT.GetSample(freq, fftoutput.Length, sr);
+                        int isamp = (int)fftsamp;
+                        double rsamp = fftsamp - (double)isamp;
+                        Complex val = fftoutput[isamp];
+                        Complex nval = fftoutput[isamp];
 
-                        double aval = Math.Abs(val.Abs * 0.1);
+                        double aval = (val.Abs * (1.0 - rsamp) + nval.Abs * rsamp) * d * 1000.0;
                         aval = Math.Min(1.0, aval);
                         Color col = Gradient.GetColor(aval);
                         byte r = (byte)(col.R * 255);
@@ -195,6 +210,34 @@ namespace MD.GUI
             /// is the lowest point in both components, and the location of the first sample.
             /// </summary>
             public Rectangle Area;
+        }
+
+        /// <summary>
+        /// A signal created by applying a symmetric window to an array.
+        /// </summary>
+        private class _WindowedSignal : IComplexSignal
+        {
+            public _WindowedSignal(double[] Window, double[] Source, int Offset, int Channels)
+            {
+                this._Window = Window;
+                this._Source = Source;
+                this._Offset = Offset;
+                this._Channels = Channels;
+            }
+
+            public Complex Get(int Index)
+            {
+                Index -= this._Window.Length;
+                int windex = Index;
+                int sindex = this._Offset + Index;
+                if (windex < 0) windex = -1 - windex;
+                return this._Source[sindex * this._Channels] * this._Window[windex];
+            }
+
+            private double[] _Window;
+            private double[] _Source;
+            private int _Offset;
+            private int _Channels;
         }
 
         private LinkedList<_DataRect> _DataRects;
