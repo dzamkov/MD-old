@@ -29,7 +29,7 @@ namespace MD.GUI
                 });
 
             this._DataRects = new LinkedList<_DataRect>();
-            this._Window = new Rectangle(0.0, 0.0, 2.0, 500.0);
+            this._Window = new Rectangle(0.0, 0.0, 0.5, 1000.0);
         }
 
         /// <summary>
@@ -45,8 +45,8 @@ namespace MD.GUI
             {
                 this._Source = value;
 
-                _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 2.0, 500.0), 256, 256));
-                data.Fill(value, this._Gradient, 0.001);
+                _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 0.5, 1000.0), 512, 256));
+                data.Fill(value, this._Gradient, 0.01);
                 this._DataRects.AddLast(data);
             }
         }
@@ -112,7 +112,7 @@ namespace MD.GUI
                 int h = this.FrequencyResolution;
 
                 // Calculate sizes
-                double gaussfalloff = 1.913 * GaussScale;
+                double gaussfalloff = 0.1913 * GaussScale;
                 int sr = Source.SampleRate;
                 int c = Source.Channels;
                 int ts = (int)(sr * this.Area.Size.X);
@@ -144,8 +144,8 @@ namespace MD.GUI
                     int midsample = pad + (int)((x / (double)w) * ts);
                     for (int y = 0; y < h; y++)
                     {
-                        /*Complex val = new Complex(0.0, 0.0);
-                        double freq = (Area.Location.Y + Area.Size.Y * y) / (double)sr;
+                        Complex val = new Complex(0.0, 0.0);
+                        double freq = (Area.Location.Y + Area.Size.Y * ((h - y - 1) / (double)h)) / (double)sr;
                         double gausssize = 1.0 / (sr * GaussScale);
                         for (int z = -pad + 1; z < pad; z++)
                         {
@@ -156,8 +156,8 @@ namespace MD.GUI
                             val += Math.Exp(-Math.PI * gaussdis * gaussdis) * new Complex(0.0, exponent).Exp * sampleval;
                         }
 
-                        double aval = val.Abs * 4;*/
-                        double aval = Math.Abs(sdat[midsample * c]);
+                        double aval = Math.Abs(val.Abs * 0.1);
+                        aval = Math.Min(1.0, aval);
                         Color col = Gradient.GetColor(aval);
                         byte r = (byte)(col.R * 255);
                         byte g = (byte)(col.G * 255);
