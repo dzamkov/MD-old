@@ -46,7 +46,7 @@ namespace MD.GUI
                 this._Source = value;
 
                 _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 2.0, 500.0), 256, 256));
-                data.Fill(value, this._Gradient, 0.01);
+                data.Fill(value, this._Gradient, 0.001);
                 this._DataRects.AddLast(data);
             }
         }
@@ -144,7 +144,7 @@ namespace MD.GUI
                     int midsample = pad + (int)((x / (double)w) * ts);
                     for (int y = 0; y < h; y++)
                     {
-                        Complex val = new Complex(0.0, 0.0);
+                        /*Complex val = new Complex(0.0, 0.0);
                         double freq = (Area.Location.Y + Area.Size.Y * y) / (double)sr;
                         double gausssize = 1.0 / (sr * GaussScale);
                         for (int z = -pad + 1; z < pad; z++)
@@ -156,7 +156,8 @@ namespace MD.GUI
                             val += Math.Exp(-Math.PI * gaussdis * gaussdis) * new Complex(0.0, exponent).Exp * sampleval;
                         }
 
-                        double aval = val.Abs * 4;
+                        double aval = val.Abs * 4;*/
+                        double aval = Math.Abs(sdat[midsample * c]);
                         Color col = Gradient.GetColor(aval);
                         byte r = (byte)(col.R * 255);
                         byte g = (byte)(col.G * 255);

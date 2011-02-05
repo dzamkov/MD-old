@@ -178,7 +178,7 @@ namespace MD
                         Output[Offset + t] = chunkdata[cpos * bps + t];
                     }
                     Amount -= dif;
-                    Offset += dif;
+                    Offset += dif * bps;
                     chunk++;
                     cpos = 0;
                 }
