@@ -91,6 +91,10 @@ namespace MD.GUI
                     this.BeginLoad(this._Window);
                 }
             }
+            if (this._Source != null)
+            {
+                this._Window = this._Window.Intersection(this.SourceRectangle);
+            }
 
             // Action queue time
             List<Action> prevactions = this._ActionQueue;
@@ -177,31 +181,51 @@ namespace MD.GUI
             AudioSource source = this._Source;
             if (source != null)
             {
-                Gradient grad = this._Gradient;
-                Thread th = new Thread(delegate()
-                    {
-                        int tsamps;
-                        int fsamps;
-                        double[] win;
-                        this._EstimateRectParameters(Rectangle, source.SampleRate, out tsamps, out fsamps, out win);
-                        _DataRect data = _DataRect.Create(Rectangle, tsamps, fsamps);
-                        Action maketexture = data.Fill(source, grad, win);
-                        this._ActionQueue.Add(delegate
+                Rectangle sourcerect = this.SourceRectangle;
+                if (sourcerect.Intersects(Rectangle))
+                {
+                    Rectangle = sourcerect.Intersection(Rectangle);
+                    Gradient grad = this._Gradient;
+                    Thread th = new Thread(delegate()
                         {
-                            maketexture();
-                            this._DataRects.AddLast(data);
-                            if (OnLoad != null)
+                            int tsamps;
+                            int fsamps;
+                            double[] win;
+                            this._EstimateRectParameters(Rectangle, source.SampleRate, out tsamps, out fsamps, out win);
+                            _DataRect data = _DataRect.Create(Rectangle, tsamps, fsamps);
+                            Action maketexture = data.Fill(source, grad, win);
+                            this._ActionQueue.Add(delegate
                             {
-                                OnLoad();
-                            }
+                                maketexture();
+                                this._DataRects.AddLast(data);
+                                if (OnLoad != null)
+                                {
+                                    OnLoad();
+                                }
+                            });
                         });
-                    });
-                th.IsBackground = true;
-                th.Start();
+                    th.IsBackground = true;
+                    th.Start();
+                }
+                else
+                {
+                    // Nothing to load.
+                    OnLoad();
+                }
             }
         }
 
-        
+        /// <summary>
+        /// Gets the time-frequency domain rectangle for the source.
+        /// </summary>
+        public Rectangle SourceRectangle
+        {
+            get
+            {
+                AudioSource source = this.Source;
+                return new Rectangle(0.0, 0.0, (double)source.Size / source.SampleRate, source.SampleRate / 2.0);
+            }
+        }
 
         /// <summary>
         /// Estimates paramters for creating a data rectangle.
