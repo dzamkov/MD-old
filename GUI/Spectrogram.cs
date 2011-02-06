@@ -54,6 +54,8 @@ namespace MD.GUI
         public override void Render(GUIRenderContext Context)
         {
             Point size = this.Size;
+            Context.PushClip(new Rectangle(size));
+
             Rectangle win = this._Window;
             foreach (_DataRect dr in this._DataRects)
             {
@@ -61,16 +63,33 @@ namespace MD.GUI
                 if (area.Intersects(win))
                 {
                     Rectangle rel = win.ToRelative(area);
-                    rel.Location.Y += 1.0 - rel.Size.Y;
+                    rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
                     rel = rel.Scale(size);
                     Context.DrawTexture(dr.Texture, rel);
                 }
             }
+
+            Context.Pop();
         }
 
         public override void Update(GUIControlContext Context, double Time)
         {
-            
+            MouseState ms = Context.MouseState;
+            if (ms != null)
+            {
+                // Zoom and stuff
+                double scroll = ms.Scroll;
+                if (scroll != 0.0)
+                {
+                    double zoom = Math.Pow(2.0, -scroll / 40.0);
+                    Rectangle win = this._Window;
+                    Point mousepos = new Rectangle(this.Size).ToRelative(ms.Position);
+                    mousepos.Y = 1.0 - mousepos.Y;
+                    Point nwinsize = win.Size * zoom;
+                    Point nwinpos = win.Location + mousepos.Scale(win.Size) - mousepos.Scale(nwinsize);
+                    this._Window = new Rectangle(nwinpos, nwinsize);
+                }
+            }
         }
 
         private static int _MakeTexture(int Width, int Height, byte[] Data)
