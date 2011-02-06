@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 
 using OpenTK;
 using OpenTK.Graphics;
@@ -26,6 +27,7 @@ namespace MD.GUI
                     new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
                 });
 
+            this._ActionQueue = new List<_Action>();
             this._DataRects = new LinkedList<_DataRect>();
             this._Window = new Rectangle(0.0, 0.0, 10.0, 3000.0);
         }
@@ -42,12 +44,7 @@ namespace MD.GUI
             set
             {
                 this._Source = value;
-
-                _DataRect data = (_DataRect.Create(new Rectangle(0.0, 0.0, 10.0, 3000.0), 512, 1024));
-
-                double[] win = _CreateGaborWindow(0.024, value.SampleRate, 2048);
-                data.Fill(value, this._Gradient, win);
-                this._DataRects.AddLast(data);
+                this.BeingLoad(new Rectangle(0.0, 0.0, 10.0, 3000.0));
             }
         }
 
@@ -65,7 +62,7 @@ namespace MD.GUI
                     Rectangle rel = win.ToRelative(area);
                     rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
                     rel = rel.Scale(size);
-                    Context.DrawTexture(dr.Texture, rel);
+                    Context.DrawTexture(dr.Texture, Color.RGBA(1.0, 1.0, 1.0, dr.Fade), rel);
                 }
             }
 
@@ -89,6 +86,30 @@ namespace MD.GUI
                     Point nwinpos = win.Location + mousepos.Scale(win.Size) - mousepos.Scale(nwinsize);
                     this._Window = new Rectangle(nwinpos, nwinsize);
                 }
+                if (ms.HasReleasedButton(OpenTK.Input.MouseButton.Left))
+                {
+                    this.BeingLoad(this._Window);
+                }
+            }
+
+            // Action queue time
+            foreach (_Action a in this._ActionQueue)
+            {
+                a();
+            }
+            this._ActionQueue.Clear();
+
+            // Foreach rect
+            const double FadeRate = 0.4;
+            LinkedListNode<_DataRect> cur = this._DataRects.First;
+            while (cur != null)
+            {
+                LinkedListNode<_DataRect> next = cur.Next;
+                _DataRect rect = cur.Value;
+                rect.Fade = Math.Min(1.0, rect.Fade + (Time / FadeRate));
+
+
+                cur = next;
             }
         }
 
@@ -121,6 +142,28 @@ namespace MD.GUI
         }
 
         /// <summary>
+        /// Begins loading a time-frequency rectangle. The data will be shown when it is done loading.
+        /// </summary>
+        public void BeingLoad(Rectangle Rectangle)
+        {
+            AudioSource source = this._Source;
+            Gradient grad = this._Gradient;
+            Thread th = new Thread(delegate()
+                {
+                    _DataRect data = _DataRect.Create(Rectangle, 128, 128);
+                    double[] win = _CreateGaborWindow(0.024, source.SampleRate, 2048);
+                    _Action maketexture = data.Fill(source, grad, win);
+                    this._ActionQueue.Add(delegate
+                    {
+                        maketexture();
+                        this._DataRects.AddLast(data);
+                    });
+                });
+            th.IsBackground = true;
+            th.Start();
+        }
+
+        /// <summary>
         /// A rectangle containing data (with a texture, and in memory) for the spectrogram.
         /// </summary>
         private class _DataRect
@@ -138,9 +181,10 @@ namespace MD.GUI
             }
 
             /// <summary>
-            /// Fills the data rectangle with data from an audio source using a transform with a symmetric, power-of-2-sized window.
+            /// Fills the data rectangle with data from an audio source using a transform with a symmetric, power-of-2-sized window. Returns an
+            /// action that needs to be called on the main thread in order to build the texture.
             /// </summary>
-            public void Fill(AudioSource Source, Gradient Gradient, double[] Window)
+            public _Action Fill(AudioSource Source, Gradient Gradient, double[] Window)
             {
                 int w = this.TimeResolution;
                 int h = this.FrequencyResolution;
@@ -204,8 +248,16 @@ namespace MD.GUI
                     }
                 }
 
-                this.Texture = _MakeTexture(w, h, dat);
+                return delegate
+                {
+                    this.Texture = _MakeTexture(w, h, dat);
+                };
             }
+
+            /// <summary>
+            /// How visible the data rect is.
+            /// </summary>
+            public double Fade;
 
             /// <summary>
             /// Gets the amount of samples in the time-domain of the rectangle.
@@ -259,6 +311,9 @@ namespace MD.GUI
             private int _Channels;
         }
 
+        private delegate void _Action();
+
+        private List<_Action> _ActionQueue;
         private LinkedList<_DataRect> _DataRects;
         private Rectangle _Window;
         private Gradient _Gradient;
