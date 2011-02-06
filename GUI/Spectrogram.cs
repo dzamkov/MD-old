@@ -44,7 +44,18 @@ namespace MD.GUI
             set
             {
                 this._Source = value;
-                this.BeginLoad(new Rectangle(0.0, 0.0, 10.0, 3000.0));
+                foreach (_DataRect dr in this._DataRects)
+                {
+                    dr.Delete();
+                }
+                this._DataRects.Clear();
+
+                if (value != null)
+                {
+                    Rectangle sourcerect = this.SourceRectangle;
+                    this.BeginLoad(sourcerect);
+                    this._Window = sourcerect;
+                }
             }
         }
 
@@ -97,11 +108,14 @@ namespace MD.GUI
             }
 
             // Action queue time
-            List<Action> prevactions = this._ActionQueue;
-            this._ActionQueue = new List<Action>();
-            foreach (Action a in prevactions)
+            lock (this)
             {
-                a();
+                List<Action> prevactions = this._ActionQueue;
+                this._ActionQueue = new List<Action>();
+                foreach (Action a in prevactions)
+                {
+                    a();
+                }
             }
 
             // Foreach rect
@@ -116,6 +130,7 @@ namespace MD.GUI
                     rect.Fade -= (Time / FadeRate);
                     if (rect.Fade <= 0.0)
                     {
+                        rect.Delete();
                         this._DataRects.Remove(cur);
                     }
                 }
@@ -194,16 +209,20 @@ namespace MD.GUI
                             this._EstimateRectParameters(Rectangle, source.SampleRate, out tsamps, out fsamps, out win);
                             _DataRect data = _DataRect.Create(Rectangle, tsamps, fsamps);
                             Action maketexture = data.Fill(source, grad, win);
-                            this._ActionQueue.Add(delegate
+                            lock (this)
                             {
-                                maketexture();
-                                this._DataRects.AddLast(data);
-                                if (OnLoad != null)
+                                this._ActionQueue.Add(delegate
                                 {
-                                    OnLoad();
-                                }
-                            });
+                                    maketexture();
+                                    this._DataRects.AddLast(data);
+                                    if (OnLoad != null)
+                                    {
+                                        OnLoad();
+                                    }
+                                });
+                            }
                         });
+                    th.Priority = ThreadPriority.BelowNormal;
                     th.IsBackground = true;
                     th.Start();
                 }
@@ -237,11 +256,13 @@ namespace MD.GUI
 
             double minfreq = Rectangle.Location.Y;
             double maxfreq = minfreq + Rectangle.Size.Y;
-            double meanfreq = (maxfreq - minfreq) / (Math.Log(maxfreq) - Math.Log(minfreq + 1));
+            double meanfreq = (maxfreq - minfreq) / (Math.Log(maxfreq) - Math.Log(minfreq + 1.0));
             double logmean = Math.Log(meanfreq);
-            double gaussscale = 0.144 / logmean;
+
             const double targmean = 5.7;
-            int pow = (int)(logmean - targmean);
+            double meanoffset = (logmean - targmean);
+            double gaussscale = 0.028 * Math.Pow(0.5, meanoffset);
+            int pow = (int)meanoffset;
             int winsize = 2048;
             while (pow > 0)
             {
@@ -253,8 +274,9 @@ namespace MD.GUI
                 winsize *= 2;
                 pow++;
             }
-            TSamples = (int)(TSamples * Math.Pow(2.0, logmean - targmean));
-            FSamples = (int)(FSamples * Math.Pow(0.7, logmean - targmean));
+
+            TSamples = (int)(TSamples * Math.Pow(1.1, meanoffset));
+            FSamples = (int)(FSamples * Math.Pow(0.9, meanoffset));
             Window = _CreateGaborWindow(gaussscale, SampleRate, winsize);
         }
 
@@ -331,8 +353,8 @@ namespace MD.GUI
                         Complex val = fftoutput[isamp];
                         Complex nval = fftoutput[isamp];
 
-                        double aval = (val.Abs * (1.0 - rsamp) + nval.Abs * rsamp) * 400.0;
-                        aval = Math.Min(1.0, aval);
+                        double aval = val.Abs * (1.0 - rsamp) + nval.Abs * rsamp;
+                        aval = Math.Min(1.0, aval * 400.0);
                         Color col = Gradient.GetColor(aval);
                         byte r = (byte)(col.R * 255);
                         byte g = (byte)(col.G * 255);
@@ -342,7 +364,10 @@ namespace MD.GUI
                         dat[i + 0] = b;
                         dat[i + 1] = g;
                         dat[i + 2] = r;
-                        dat[i + 3] = 255;
+                        if (x > 0 && x < w - 1 && y > 0 && y < h - 1)
+                        {
+                            dat[i + 3] = 255;
+                        }
                     }
                 }
 
@@ -360,12 +385,14 @@ namespace MD.GUI
                 this.Splitting = true;
                 Rectangle area = this.Area;
                 Point subsize = area.Size * 0.5;
+                Point submargin = subsize * 0.02;
+                Point fullsubsize = subsize + submargin * 2.0;
                 Rectangle[] subrects = new Rectangle[]
                 {
-                    new Rectangle(area.Location + new Point(0.0, 0.0), subsize),
-                    new Rectangle(area.Location + new Point(subsize.X, 0.0), subsize),
-                    new Rectangle(area.Location + new Point(0.0, subsize.Y), subsize),
-                    new Rectangle(area.Location + new Point(subsize.X, subsize.Y), subsize),
+                    new Rectangle(area.Location + new Point(0.0, 0.0), fullsubsize),
+                    new Rectangle(area.Location + new Point(subsize.X - submargin.X, 0.0), fullsubsize),
+                    new Rectangle(area.Location + new Point(0.0, subsize.Y - submargin.Y), fullsubsize),
+                    new Rectangle(area.Location + new Point(subsize.X - submargin.X, subsize.Y - submargin.Y), fullsubsize),
                 };
                 bool[] complete = new bool[4];
                 for (int t = 0; t < 4; t++)
@@ -386,6 +413,14 @@ namespace MD.GUI
                         this.Removing = true;
                     });
                 }
+            }
+
+            /// <summary>
+            /// Deletes all resources associated with the data rectangle.
+            /// </summary>
+            public void Delete()
+            {
+                GL.DeleteTexture(this.Texture);
             }
 
             /// <summary>
