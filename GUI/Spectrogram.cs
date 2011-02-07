@@ -10,153 +10,142 @@ using OpenTKGUI;
 namespace MD.GUI
 {
     /// <summary>
-    /// A spectrogram, without any other controls or measurements.
+    /// Plot data for a spectrogram of an audio source.
     /// </summary>
-    public class Spectrogram : Control
+    public class SpectrogramData : PlotData
     {
-        public Spectrogram()
+        public SpectrogramData(AudioSource Source)
         {
-            this._Gradient = new Gradient(
-                Color.RGB(1.0, 1.0, 1.0),
-                Color.RGB(0.5, 0.0, 0.0),
-                new Gradient.Stop[]
-                {
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 1.0), 0.35),
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 0.0), 0.5),
-                    new Gradient.Stop(Color.RGB(1.0, 1.0, 0.0), 0.6),
-                    new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
-                });
-
-            this._ActionQueue = new List<Action>();
-            this._DataRects = new LinkedList<_DataRect>();
-            this._Window = new Rectangle(0.0, 0.0, 10.0, 3000.0);
+            this._Source = Source;
         }
 
-        /// <summary>
-        /// Gets or sets the source audio data for the spectrogram.
-        /// </summary>
-        public AudioSource Source
+        public override Rectangle Domain
         {
             get
             {
-                return this._Source;
-            }
-            set
-            {
-                this._Source = value;
-                foreach (_DataRect dr in this._DataRects)
-                {
-                    dr.Delete();
-                }
-                this._DataRects.Clear();
-
-                if (value != null)
-                {
-                    Rectangle sourcerect = this.SourceRectangle;
-                    this.BeginLoad(sourcerect);
-                    this._Window = sourcerect;
-                }
+                AudioSource source = this._Source;
+                return new Rectangle(0.0, 0.0, (double)source.Size / source.SampleRate, source.SampleRate / 2.0);
             }
         }
 
-        public override void Render(GUIRenderContext Context)
+        public override PlotData.Zone GetZone(Rectangle Area)
         {
-            Point size = this.Size;
-            Context.PushClip(new Rectangle(size));
-
-            Rectangle win = this._Window;
-            foreach (_DataRect dr in this._DataRects)
-            {
-                Rectangle area = dr.Area;
-                if (area.Intersects(win))
-                {
-                    Rectangle rel = win.ToRelative(area);
-                    rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
-                    rel = rel.Scale(size);
-                    Context.DrawTexture(dr.Texture, Color.RGBA(1.0, 1.0, 1.0, dr.Fade), rel);
-                }
-            }
-
-            Context.Pop();
+            return new Zone(Area, this._Source);
         }
 
-        public override void Update(GUIControlContext Context, double Time)
+        /// <summary>
+        /// Zone for spectrogram data.
+        /// </summary>
+        public new class Zone : PlotData.Zone
         {
-            MouseState ms = Context.MouseState;
-            if (ms != null)
+            public Zone(Rectangle Area, AudioSource Source)
             {
-                // Zoom and stuff
-                double scroll = ms.Scroll;
-                if (scroll != 0.0)
-                {
-                    double zoom = Math.Pow(2.0, -scroll / 40.0);
-                    Rectangle win = this._Window;
-                    Point mousepos = new Rectangle(this.Size).ToRelative(ms.Position);
-                    mousepos.Y = 1.0 - mousepos.Y;
-                    Point nwinsize = win.Size * zoom;
-                    Point nwinpos = win.Location + mousepos.Scale(win.Size) - mousepos.Scale(nwinsize);
-                    this._Window = new Rectangle(nwinpos, nwinsize);
-                }
-                if (ms.HasReleasedButton(OpenTK.Input.MouseButton.Left))
-                {
-                    this.BeginLoad(this._Window);
-                }
-            }
-            if (this._Source != null)
-            {
-                this._Window = this._Window.Intersection(this.SourceRectangle);
+                this._Area = Area;
+                this._Source = Source;
+
+                double minfreq = Area.Location.Y;
+                double maxfreq = minfreq + Area.Size.Y;
+                double meanfreq = (maxfreq - minfreq) / (Math.Log(maxfreq) - Math.Log(minfreq + 1.0));
+                double logmean = Math.Log(meanfreq);
+                const double targmean = 5.7;
+                this._MeanOffset = (logmean - targmean);
             }
 
-            // Action queue time
-            lock (this)
+            /// <summary>
+            /// Gets the size of the window to use to perform the fourier transform.
+            /// </summary>
+            public int WindowSize
             {
-                List<Action> prevactions = this._ActionQueue;
-                this._ActionQueue = new List<Action>();
-                foreach (Action a in prevactions)
+                get
                 {
-                    a();
+                    return 2048 >> (int)(this._MeanOffset);
                 }
             }
 
-            // Foreach rect
-            const double FadeRate = 0.4;
-            LinkedListNode<_DataRect> cur = this._DataRects.First;
-            while (cur != null)
+            /// <summary>
+            /// Gets the scale of the gaussian window to use for the gabor transform.
+            /// </summary>
+            public double GaussScale
             {
-                LinkedListNode<_DataRect> next = cur.Next;
-                _DataRect rect = cur.Value;
-                if (rect.Removing)
+                get
                 {
-                    rect.Fade -= (Time / FadeRate);
-                    if (rect.Fade <= 0.0)
+                    return 0.028 * Math.Pow(0.5, this._MeanOffset);
+                }
+            }
+
+            public override double SampleRatio
+            {
+                get
+                {
+                    return Math.Pow(1.1, this._MeanOffset) / Math.Pow(0.9, this._MeanOffset);
+                }
+            }
+
+            public override Rectangle Area
+            {
+                get
+                {
+                    return this._Area;
+                }
+            }
+
+            public override void GetData<TOutput>(int Width, int Height, TOutput Output)
+            {
+                double[] window = _CreateGaborWindow(this.GaussScale, this._Source.SampleRate, this.WindowSize);
+
+                // Calculate sizes
+                int sr = this._Source.SampleRate;
+                int c = this._Source.Channels;
+                int ts = (int)(sr * this.Area.Size.X);
+                int pad = window.Length;
+                int fs = ts + pad + pad;
+
+                // Read required data
+                double[] sdat = new double[fs * c];
+                int sourcesize = this._Source.Size;
+                int readsize = fs;
+                int start = (int)(sr * this.Area.Location.X) - pad;
+                int offset = 0;
+                if(start < 0)
+                {
+                    readsize += start;
+                    offset -= start * c;
+                    start = 0;
+                }
+                if(readsize + start >= sourcesize)
+                {
+                    readsize = sourcesize - start;
+                }
+                if (readsize > 0)
+                {
+                    this._Source.ReadDouble(start, readsize, sdat, offset);
+                }
+
+                // Begin filling data
+                Complex[] fftoutput = new Complex[window.Length * 2];
+                for (int x = 0; x < Width; x++)
+                {
+                    int midsample = pad + (int)((x / (double)Width) * ts);
+                    _WindowedSignal ws = new _WindowedSignal(window, sdat, midsample, c);
+                    FFT.OnSignal<_WindowedSignal>(ws, false, fftoutput, fftoutput.Length);
+                    for (int y = 0; y < Height; y++)
                     {
-                        rect.Delete();
-                        this._DataRects.Remove(cur);
+                        double freq = this.Area.Location.Y + this.Area.Size.Y * ((Height - y - 1) / (double)Height);
+                        double fftsamp = FFT.GetSample(freq, fftoutput.Length, sr);
+                        int isamp = (int)fftsamp;
+                        double rsamp = fftsamp - (double)isamp;
+                        Complex val = fftoutput[isamp];
+                        Complex nval = fftoutput[isamp];
+
+                        double aval = val.Abs * (1.0 - rsamp) + nval.Abs * rsamp;
+                        Output.Set(x, y, aval);
                     }
                 }
-                else
-                {
-                    rect.Fade = Math.Min(1.0, rect.Fade + (Time / FadeRate));
-                    if (!rect.Splitting && rect.Area.Size.X > 6.0)
-                    {
-                        rect.Split(this);
-                    }
-                }
-                cur = next;
             }
-        }
 
-        private static int _MakeTexture(int Width, int Height, byte[] Data)
-        {
-            int id = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, id);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, Width, Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, Data);
-            GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
-            return id;
+            private double _MeanOffset;
+            private Rectangle _Area;
+            private AudioSource _Source;
         }
 
         /// <summary>
@@ -178,288 +167,6 @@ namespace MD.GUI
                 win[t] *= itotal;
             }
             return win;
-        }
-
-        /// <summary>
-        /// Begins loading a time-frequency rectangle. The data will be shown when it is done loading.
-        /// </summary>
-        public void BeginLoad(Rectangle Rectangle)
-        {
-            this.BeginLoad(Rectangle, null);
-        }
-
-        /// <summary>
-        /// Begins loading a time-frequency rectangle. The data will be shown when it is done loading.
-        /// </summary>
-        public void BeginLoad(Rectangle Rectangle, Action OnLoad)
-        {
-            AudioSource source = this._Source;
-            if (source != null)
-            {
-                Rectangle sourcerect = this.SourceRectangle;
-                if (sourcerect.Intersects(Rectangle))
-                {
-                    Rectangle = sourcerect.Intersection(Rectangle);
-                    Gradient grad = this._Gradient;
-                    Thread th = new Thread(delegate()
-                        {
-                            int tsamps;
-                            int fsamps;
-                            double[] win;
-                            this._EstimateRectParameters(Rectangle, source.SampleRate, out tsamps, out fsamps, out win);
-                            _DataRect data = _DataRect.Create(Rectangle, tsamps, fsamps);
-                            Action maketexture = data.Fill(source, grad, win);
-                            lock (this)
-                            {
-                                this._ActionQueue.Add(delegate
-                                {
-                                    maketexture();
-                                    this._DataRects.AddLast(data);
-                                    if (OnLoad != null)
-                                    {
-                                        OnLoad();
-                                    }
-                                });
-                            }
-                        });
-                    th.Priority = ThreadPriority.BelowNormal;
-                    th.IsBackground = true;
-                    th.Start();
-                }
-                else
-                {
-                    // Nothing to load.
-                    OnLoad();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Gets the time-frequency domain rectangle for the source.
-        /// </summary>
-        public Rectangle SourceRectangle
-        {
-            get
-            {
-                AudioSource source = this.Source;
-                return new Rectangle(0.0, 0.0, (double)source.Size / source.SampleRate, source.SampleRate / 2.0);
-            }
-        }
-
-        /// <summary>
-        /// Estimates paramters for creating a data rectangle.
-        /// </summary>
-        private void _EstimateRectParameters(Rectangle Rectangle, int SampleRate, out int TSamples, out int FSamples, out double[] Window)
-        {
-            TSamples = 128;
-            FSamples = 128;
-
-            double minfreq = Rectangle.Location.Y;
-            double maxfreq = minfreq + Rectangle.Size.Y;
-            double meanfreq = (maxfreq - minfreq) / (Math.Log(maxfreq) - Math.Log(minfreq + 1.0));
-            double logmean = Math.Log(meanfreq);
-
-            const double targmean = 5.7;
-            double meanoffset = (logmean - targmean);
-            double gaussscale = 0.028 * Math.Pow(0.5, meanoffset);
-            int pow = (int)meanoffset;
-            int winsize = 2048;
-            while (pow > 0)
-            {
-                winsize /= 2;
-                pow--;
-            }
-            while (pow < 0)
-            {
-                winsize *= 2;
-                pow++;
-            }
-
-            TSamples = (int)(TSamples * Math.Pow(1.1, meanoffset));
-            FSamples = (int)(FSamples * Math.Pow(0.9, meanoffset));
-            Window = _CreateGaborWindow(gaussscale, SampleRate, winsize);
-        }
-
-        /// <summary>
-        /// A rectangle containing data (with a texture, and in memory) for the spectrogram.
-        /// </summary>
-        private class _DataRect
-        {
-            /// <summary>
-            /// Creates a data rectangle.
-            /// </summary>
-            public static _DataRect Create(Rectangle Area, int TimeResolution, int FrequencyResolution)
-            {
-                _DataRect dr = new _DataRect();
-                dr.Area = Area;
-                dr.TimeResolution = TimeResolution;
-                dr.FrequencyResolution = FrequencyResolution;
-                return dr;
-            }
-
-            /// <summary>
-            /// Fills the data rectangle with data from an audio source using a transform with a symmetric, power-of-2-sized window. Returns an
-            /// action that needs to be called on the main thread in order to build the texture.
-            /// </summary>
-            public Action Fill(AudioSource Source, Gradient Gradient, double[] Window)
-            {
-                int w = this.TimeResolution;
-                int h = this.FrequencyResolution;
-
-                // Calculate sizes
-                int sr = Source.SampleRate;
-                int c = Source.Channels;
-                int ts = (int)(sr * this.Area.Size.X);
-                int pad = Window.Length;
-                int fs = ts + pad + pad;
-
-                // Read required data
-                double[] sdat = new double[fs * c];
-                int sourcesize = Source.Size;
-                int readsize = fs;
-                int start = (int)(sr * this.Area.Location.X) - pad;
-                int offset = 0;
-                if(start < 0)
-                {
-                    readsize += start;
-                    offset -= start * c;
-                    start = 0;
-                }
-                if(readsize + start >= sourcesize)
-                {
-                    readsize = sourcesize - start;
-                }
-                if (readsize > 0)
-                {
-                    Source.ReadDouble(start, readsize, sdat, offset);
-                }
-
-                // Begin filling data
-                Complex[] fftoutput = new Complex[Window.Length * 2];
-
-                byte[] dat = new byte[w * h * 4];
-                for (int x = 0; x < w; x++)
-                {
-                    int midsample = pad + (int)((x / (double)w) * ts);
-                    _WindowedSignal ws = new _WindowedSignal(Window, sdat, midsample, c);
-                    FFT.OnSignal<_WindowedSignal>(ws, false, fftoutput, fftoutput.Length);
-
-                    for (int y = 0; y < h; y++)
-                    {
-                        double freq = this.Area.Location.Y + this.Area.Size.Y * ((h - y - 1) / (double)h);
-                        double fftsamp = FFT.GetSample(freq, fftoutput.Length, sr);
-                        int isamp = (int)fftsamp;
-                        double rsamp = fftsamp - (double)isamp;
-                        Complex val = fftoutput[isamp];
-                        Complex nval = fftoutput[isamp];
-
-                        double aval = val.Abs * (1.0 - rsamp) + nval.Abs * rsamp;
-                        aval = Math.Min(1.0, aval * 400.0);
-                        Color col = Gradient.GetColor(aval);
-                        byte r = (byte)(col.R * 255);
-                        byte g = (byte)(col.G * 255);
-                        byte b = (byte)(col.B * 255);
-
-                        int i = (x + y * w) * 4;
-                        dat[i + 0] = b;
-                        dat[i + 1] = g;
-                        dat[i + 2] = r;
-                        if (x > 0 && x < w - 1 && y > 0 && y < h - 1)
-                        {
-                            dat[i + 3] = 255;
-                        }
-                    }
-                }
-
-                return delegate
-                {
-                    this.Texture = _MakeTexture(w, h, dat);
-                };
-            }
-
-            /// <summary>
-            /// Causes the data rect to subdivide into 4 parts.
-            /// </summary>
-            public void Split(Spectrogram Spectrogram)
-            {
-                this.Splitting = true;
-                Rectangle area = this.Area;
-                Point subsize = area.Size * 0.5;
-                Point submargin = subsize * 0.02;
-                Point fullsubsize = subsize + submargin * 2.0;
-                Rectangle[] subrects = new Rectangle[]
-                {
-                    new Rectangle(area.Location + new Point(0.0, 0.0), fullsubsize),
-                    new Rectangle(area.Location + new Point(subsize.X - submargin.X, 0.0), fullsubsize),
-                    new Rectangle(area.Location + new Point(0.0, subsize.Y - submargin.Y), fullsubsize),
-                    new Rectangle(area.Location + new Point(subsize.X - submargin.X, subsize.Y - submargin.Y), fullsubsize),
-                };
-                bool[] complete = new bool[4];
-                for (int t = 0; t < 4; t++)
-                {
-                    int index = t;
-                    Spectrogram.BeginLoad(subrects[index], delegate
-                    {
-                        complete[index] = true;
-
-                        // If all split parts are done loading, remove the original rect.
-                        for (int i = 0; i < 4; i++)
-                        {
-                            if (!complete[i])
-                            {
-                                return;
-                            }
-                        }
-                        this.Removing = true;
-                    });
-                }
-            }
-
-            /// <summary>
-            /// Deletes all resources associated with the data rectangle.
-            /// </summary>
-            public void Delete()
-            {
-                GL.DeleteTexture(this.Texture);
-            }
-
-            /// <summary>
-            /// Gets if the data is in the process of being removed.
-            /// </summary>
-            public bool Removing;
-
-            /// <summary>
-            /// Gets if the data rect is currently being split.
-            /// </summary>
-            public bool Splitting;
-
-            /// <summary>
-            /// How visible the data rect is.
-            /// </summary>
-            public double Fade;
-
-            /// <summary>
-            /// Gets the amount of samples in the time-domain of the rectangle.
-            /// </summary>
-            public int TimeResolution;
-
-            /// <summary>
-            /// Gets the amount of samples in the frequency-domain of the rectangle.
-            /// </summary>
-            public int FrequencyResolution;
-
-            /// <summary>
-            /// Gets the texture for this data.
-            /// </summary>
-            public int Texture;
-
-            /// <summary>
-            /// Gets the area this data occupies in the time-frequency domain. The X component of the
-            /// rectangle gives the seconds into the audio source this data is and the Y component
-            /// gives the frequency in hertz of the data. Note that the location of the rectangle
-            /// is the lowest point in both components, and the location of the first sample.
-            /// </summary>
-            public Rectangle Area;
         }
 
         /// <summary>
@@ -490,10 +197,6 @@ namespace MD.GUI
             private int _Channels;
         }
 
-        private List<Action> _ActionQueue;
-        private LinkedList<_DataRect> _DataRects;
-        private Rectangle _Window;
-        private Gradient _Gradient;
         private AudioSource _Source;
     }
 }

@@ -65,6 +65,7 @@
     <Compile Include="GUI\MainWindow.cs" />
     <Compile Include="GUI\Spectrogram.cs" />
     <Compile Include="MP3AudioFeed.cs" />
+    <Compile Include="GUI\Plot.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Res.Designer.cs">
       <AutoGen>True</AutoGen>
