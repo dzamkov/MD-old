@@ -27,6 +27,9 @@ namespace MD.GUI
                     new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
                 });
             this._Multiplier = 400.0;
+            this._ThreadPool = new ThreadPool();
+            this._ThreadPool.TargetThreadAmount = 1;
+            this._ActionQueue = new List<Action>();
         }
 
         public override void Render(GUIRenderContext Context)
@@ -62,6 +65,35 @@ namespace MD.GUI
                     }
                 }
             }
+
+            // Action queue!
+            lock (this)
+            {
+                List<Action> olqueue = this._ActionQueue;
+                this._ActionQueue = new List<Action>();
+                foreach (Action action in olqueue)
+                {
+                    action();
+                }
+            }
+
+            // Update zones
+            if (this._MainZone != null)
+            {
+                this._UpdateZone(this._MainZone, Time);
+            }
+        }
+
+        private void _UpdateZone(PlotZone Zone, double Time)
+        {
+            const double FadeTime = 0.5;
+            Zone._Fade = Math.Min(1.0, Zone._Fade + (Time / FadeTime));
+
+
+            foreach (PlotZone subzone in Zone._SubZones)
+            {
+                this._UpdateZone(subzone, Time);
+            }
         }
 
         /// <summary>
@@ -73,6 +105,37 @@ namespace MD.GUI
             {
                 PlotZone pz = PlotZone._Create(this._Data.GetZone(Area), this._Multiplier, this._Gradient)();
                 this._AddToTop(pz);
+            }
+        }
+
+        /// <summary>
+        /// Splits a zone into the specified amount (horizontally and vertically) of subzones. The main
+        /// zone is kept.
+        /// </summary>
+        private void _Split(PlotZone Zone, int X, int Y)
+        {
+            Zone._Splitting = true;
+
+            Rectangle area = Zone.Area;
+            Point nsize = area.Size.Scale(new Point(1.0 / X, 1.0 / Y));
+            int zones = X * Y;
+            for (int x = 0; x < X; x++)
+            {
+                for (int y = 0; y < Y; y++)
+                {
+                    Rectangle rect = new Rectangle(area.Location + new Point(nsize.X * x, nsize.Y * y), nsize);
+                    this._ThreadPool.AppendTask(delegate
+                    {
+                        Func<PlotZone> pz = PlotZone._Create(this._Data.GetZone(rect), this._Multiplier, this._Gradient);
+                        lock (this)
+                        {
+                            this._ActionQueue.Add(delegate
+                            {
+                                Zone._SubZones.AddLast(pz());
+                            });
+                        }
+                    });
+                }
             }
         }
 
@@ -177,6 +240,7 @@ namespace MD.GUI
                     this._Data = value;
                     this._Window = this._Data.Domain;
                     this.Load(this.Data.Domain);
+                    this._Split(this._MainZone, 9, 9);
                 }
             }
         }
@@ -194,6 +258,8 @@ namespace MD.GUI
         private Rectangle _Window;
         private Gradient _Gradient;
         private double _Multiplier;
+        private ThreadPool _ThreadPool;
+        private List<Action> _ActionQueue;
     }
 
     /// <summary>
@@ -281,7 +347,7 @@ namespace MD.GUI
                 {
                     _Texture = to.CreateTexture(),
                     _Area = Source.Area,
-                    _Fade = 1.0,
+                    _Fade = 0.0,
                     _Source = Source,
                 };
             };
@@ -333,6 +399,7 @@ namespace MD.GUI
             private Gradient _Gradient;
         }
 
+        internal bool _Splitting;
         private int _Texture;
         internal double _Fade;
         private Rectangle _Area;
