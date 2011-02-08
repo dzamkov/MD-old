@@ -10,12 +10,15 @@ using OpenTKGUI;
 namespace MD.GUI
 {
     /// <summary>
-    /// A control that shows the correlation between two independant variables and a dependant variable.
+    /// Handles textures and resources needed to create a visual representation of data that shows the correlation 
+    /// between two independant variables and a dependant variable.
     /// </summary>
-    public class Plot : Control
+    public class Plot : IDisposable
     {
-        public Plot()
+        public Plot(PlotData Data)
         {
+            this._Data = Data;
+
             this._Gradient = new Gradient(
                 Color.RGB(1.0, 1.0, 1.0),
                 Color.RGB(0.5, 0.0, 0.0),
@@ -30,42 +33,49 @@ namespace MD.GUI
             this._ThreadPool = new ThreadPool();
             this._ThreadPool.TargetThreadAmount = 1;
             this._ActionQueue = new List<Action>();
+
+            // Load the main zone
+            Rectangle domain = Data.Domain;
+            this._ThreadPool.AppendTask(delegate
+            {
+                Func<PlotZone> pz = PlotZone._Create(this._Data.GetZone(domain), this._Multiplier, this._Gradient);
+                lock (this)
+                {
+                    this._ActionQueue.Add(delegate
+                    {
+                        PlotZone main = pz();
+                        if (this._MainZone != null)
+                        {
+                            main._SubZones.AddLast(this._MainZone);
+                        }
+                        this._MainZone = main;
+                    });
+                }
+            });
         }
 
-        public override void Render(GUIRenderContext Context)
+        /// <summary>
+        /// Renders the plot to the given render context.
+        /// </summary>
+        /// <param name="Size">The size of the renderable area.</param>
+        /// <param name="Window">The area currently seen in the plot.</param>
+        public void Render(GUIRenderContext Context, Point Size, Rectangle Window)
         {
-            Point size = this.Size;
-            Context.PushClip(new Rectangle(size));
-            Rectangle win = this._Window;
+            Context.PushClip(new Rectangle(Size));
             if(this._MainZone != null)
             {
-                this._MainZone._RenderRecursive(Context, win, size);
+                this._MainZone._RenderRecursive(Context, Window, Size);
             }
             Context.Pop();
         }
 
-        public override void Update(GUIControlContext Context, double Time)
+        /// <summary>
+        /// Updates the plot by the given amount of time in seconds. This must be called on the thread
+        /// with the GL context used by render, as textures may need to be created.
+        /// </summary>
+        /// <param name="Window">The area currently seen in the plot.</param>
+        public void Update(Rectangle Window, double Time)
         {
-            if (this._Data != null)
-            {
-                MouseState ms = Context.MouseState;
-                if (ms != null)
-                {
-                    // Zoom and stuff
-                    double scroll = ms.Scroll;
-                    if (scroll != 0.0)
-                    {
-                        double zoom = Math.Pow(2.0, -scroll / 40.0);
-                        Rectangle win = this._Window;
-                        Point mousepos = new Rectangle(this.Size).ToRelative(ms.Position);
-                        mousepos.Y = 1.0 - mousepos.Y;
-                        Point nwinsize = win.Size * zoom;
-                        Point nwinpos = win.Location + mousepos.Scale(win.Size) - mousepos.Scale(nwinsize);
-                        this._Window = new Rectangle(nwinpos, nwinsize).Intersection(this.Data.Domain);
-                    }
-                }
-            }
-
             // Action queue!
             lock (this)
             {
@@ -97,7 +107,7 @@ namespace MD.GUI
         }
 
         /// <summary>
-        /// Forces an area to be loaded.
+        /// Forces an area to be loaded on the calling thread (this may take a while).
         /// </summary>
         public void Load(Rectangle Area)
         {
@@ -180,25 +190,6 @@ namespace MD.GUI
         }
 
         /// <summary>
-        /// Gets or sets the area currently visible in the plot.
-        /// </summary>
-        public Rectangle Window
-        {
-            get
-            {
-                return this._Window;
-            }
-            set
-            {
-                this._Window = value;
-                if (this._Data != null)
-                {
-                    this._Window = this._Window.Intersection(this.Data.Domain);
-                }
-            }
-        }
-
-        /// <summary>
         /// Gets the gradient used for displaying data.
         /// </summary>
         public Gradient Gradient
@@ -221,7 +212,7 @@ namespace MD.GUI
         }
 
         /// <summary>
-        /// Gets or sets the data for the plot.
+        /// Gets the data for the plot.
         /// </summary>
         public PlotData Data
         {
@@ -229,33 +220,15 @@ namespace MD.GUI
             {
                 return this._Data;
             }
-            set
-            {
-                if (this._Data != value)
-                {
-                    if (this._MainZone != null)
-                    {
-                        this._MainZone._Delete();
-                    }
-                    this._Data = value;
-                    this._Window = this._Data.Domain;
-                    this.Load(this.Data.Domain);
-                    this._Split(this._MainZone, 9, 9);
-                }
-            }
         }
 
-        protected override void OnDispose()
+        public void Dispose()
         {
-            if (this._MainZone != null)
-            {
-                this._MainZone._Delete();
-            }
+            this._MainZone._Delete();
         }
 
         private PlotData _Data;
         private PlotZone _MainZone;
-        private Rectangle _Window;
         private Gradient _Gradient;
         private double _Multiplier;
         private ThreadPool _ThreadPool;

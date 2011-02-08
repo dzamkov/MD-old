@@ -10,6 +10,47 @@ using OpenTKGUI;
 namespace MD.GUI
 {
     /// <summary>
+    /// An interactive spectrogram created for an audio source.
+    /// </summary>
+    public class Spectrogram : View
+    {
+        public Spectrogram(AudioSource Source)
+        {
+            this._Data = new SpectrogramData(Source);
+            this._Plot = new Plot(this._Data);
+            this.Window = this.Domain;
+        }
+
+        public override Rectangle Domain
+        {
+            get
+            {
+                return this._Data.Domain;
+            }
+        }
+
+        public override void Render(GUIRenderContext Context)
+        {
+            this._Plot.Render(Context, this.Size, this.Window);
+        }
+
+        public override void Update(GUIControlContext Context, double Time)
+        {
+            this._Plot.Update(this.Window, Time);
+            base.Update(Context, Time);
+        }
+
+        protected override void OnDispose()
+        {
+            this._Plot.Dispose();
+            base.OnDispose();
+        }
+
+        private SpectrogramData _Data;
+        private Plot _Plot;
+    }
+
+    /// <summary>
     /// Plot data for a spectrogram of an audio source.
     /// </summary>
     public class SpectrogramData : PlotData

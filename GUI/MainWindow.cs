@@ -19,8 +19,8 @@ namespace MD.GUI
         {
             this.WindowState = WindowState.Maximized;
 
-            // Spectrogram
-            this._Spectrogram = new Plot();
+            // Client area
+            VariableContainer clientarea = new VariableContainer();
 
             // Menu items
             MenuItem[] menuitems = new MenuItem[]
@@ -37,7 +37,10 @@ namespace MD.GUI
                                 string file = fd.FileName;
                                 AudioContext ac = new AudioContext();
                                 MemoryAudioSource mas = new MP3AudioFeed(file).Copy(4096, 4096 * 100);
-                                this._Spectrogram.Data = new SpectrogramData(mas);
+
+                                Spectrogram sp = new Spectrogram(mas);
+                                clientarea.Client = sp;
+
                                 AudioOutput ao = new AudioOutput(mas.Play);
                                 ao.Play();
                             }
@@ -56,7 +59,7 @@ namespace MD.GUI
 
             // Menu and splitter
             Menu menu = new Menu(menuitems);
-            SplitContainer sc = new SplitContainer(Axis.Vertical, menu.WithBorder(0.0, 0.0, 0.0, 1.0), this._Spectrogram);
+            SplitContainer sc = new SplitContainer(Axis.Vertical, menu.WithBorder(0.0, 0.0, 0.0, 1.0), clientarea);
             sc.NearSize = 30.0;
 
             // Main layer container
@@ -70,7 +73,5 @@ namespace MD.GUI
             WinForms.Application.DoEvents();
             base.OnUpdateFrame(e);
         }
-
-        private Plot _Spectrogram;
     }
 }

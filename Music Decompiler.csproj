@@ -64,6 +64,7 @@
     <Compile Include="FFT.cs" />
     <Compile Include="GUI\MainWindow.cs" />
     <Compile Include="GUI\Spectrogram.cs" />
+    <Compile Include="GUI\View.cs" />
     <Compile Include="MP3AudioFeed.cs" />
     <Compile Include="GUI\Plot.cs" />
     <Compile Include="Program.cs" />
