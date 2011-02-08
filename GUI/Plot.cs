@@ -32,8 +32,10 @@ namespace MD.GUI
             this._Multiplier = 400.0;
             this._LoadPool = new ThreadPool(this._NextTask);
             this._LoadPool.TargetThreadAmount = 3;
-            this._LoadingZones = new LinkedList<_LoadingZone>();
-            this._MainZone = this._Load(Data.Domain);
+
+            Rectangle domain = Data.Domain;
+            this._LastWindow = domain;
+            this._MainNode = PlotNode._CreateLoading(Data.GetZone(domain));
         }
 
         /// <summary>
@@ -44,9 +46,9 @@ namespace MD.GUI
         public void Render(GUIRenderContext Context, Point Size, Rectangle Window)
         {
             Context.PushClip(new Rectangle(Size));
-            if(this._MainZone != null)
+            if(this._MainNode != null)
             {
-                this._MainZone._RenderRecursive(Context, Window, Size, this._Multiplier, this._Gradient);
+                this._MainNode._RenderRecursive(Context, Window, Size, this._Multiplier, this._Gradient);
             }
             Context.Pop();
         }
@@ -58,51 +60,30 @@ namespace MD.GUI
         /// <param name="Window">The area currently seen in the plot.</param>
         public void Update(Rectangle Window, double Time)
         {
+            this._LastWindow = Window;
+
             // Update zones
-            this._UpdateZone(this._MainZone, Window, Time);
-        }
+            this._UpdateNode(this._MainNode, Window, Time);
 
-        private void _UpdateZone(PlotZone Zone, Rectangle Window, double Time)
-        {
-            if (!Zone._Loading)
+            // Handle signalling for thread pool
+            this._SignalTime--;
+            if (this._SignalTime < 0)
             {
-                const double FadeTime = 0.5;
-                Zone._Fade = Math.Min(1.0, Zone._Fade + (Time / FadeTime));
-
-                // Split if needed
-                bool hassubzones = false;
-                foreach (PlotZone sub in Zone.SubZones)
-                {
-                    hassubzones = true;
-                    break;
-                }
-                if (!hassubzones)
-                {
-                    this._Split(Zone, 2, 2);
-                }
-
-                foreach (PlotZone subzone in Zone.SubZones)
-                {
-                    this._UpdateZone(subzone, Window, Time);
-                }
+                this._SignalTime = 100;
+                this._LoadPool.Signal();
             }
         }
 
-        /// <summary>
-        /// Splits a zone into the specified amount (horizontally and vertically) of subzones. The main
-        /// zone is kept.
-        /// </summary>
-        private void _Split(PlotZone Zone, int X, int Y)
+        private void _UpdateNode(PlotNode Node, Rectangle Window, double Time)
         {
-            Rectangle area = Zone.Area;
-            Point nsize = area.Size.Scale(new Point(1.0 / X, 1.0 / Y));
-            int zones = X * Y;
-            for (int x = 0; x < X; x++)
+            if (!Node._Loading)
             {
-                for (int y = 0; y < Y; y++)
+                const double FadeTime = 0.5;
+                Node._Fade = Math.Min(1.0, Node._Fade + (Time / FadeTime));
+
+                foreach (PlotNode subnode in Node.SubNodes)
                 {
-                    Rectangle rect = new Rectangle(area.Location + new Point(nsize.X * x, nsize.Y * y), nsize);
-                    Zone._AddSubZone(this._Load(rect));
+                    this._UpdateNode(subnode, Window, Time);
                 }
             }
         }
@@ -142,24 +123,7 @@ namespace MD.GUI
 
         public void Dispose()
         {
-            this._MainZone._Delete();
-        }
-
-        /// <summary>
-        /// Loads the specified area.
-        /// </summary>
-        internal PlotZone _Load(Rectangle Area)
-        {
-            PlotZone pz = PlotZone._CreateLoading(this._Data.GetZone(Area));
-            lock (this)
-            {
-                this._LoadingZones.AddFirst(new _LoadingZone()
-                {
-                    Zone = pz
-                });
-                this._LoadPool.Signal();
-            }
-            return pz;
+            this._MainNode._Delete();
         }
 
         /// <summary>
@@ -167,58 +131,47 @@ namespace MD.GUI
         /// </summary>
         private Action _NextTask()
         {
+            double priority;
+            PlotNode next;
             lock (this)
             {
-                LinkedListNode<_LoadingZone> cur = this._LoadingZones.First;
-                LinkedListNode<_LoadingZone> highest = null;
-                while (cur != null)
-                {
-                    if (highest == null || cur.Value.Priority > highest.Value.Priority)
-                    {
-                        highest = cur;
-                    }
-                    cur = cur.Next;
-                }
-                if (highest != null)
-                {
-                    PlotZone toload = highest.Value.Zone;
-                    this._LoadingZones.Remove(highest);
-                    return toload._Load;
-                }
+                next = this._MainNode._NextLoad(this._LastWindow, out priority);
             }
-            return null;
+            if (next != null && priority > 0.1)
+            {
+                return delegate
+                {
+                    lock (this)
+                    {
+                        next._NeedLoad = false;
+                        next._Split(this._Data);
+                    }
+                    next._Load();
+                };
+            }
+            else
+            {
+                return null;
+            }
         }
 
-        private class _LoadingZone
-        {
-            /// <summary>
-            /// The priority for this zone to be loaded.
-            /// </summary>
-            public double Priority;
-
-            /// <summary>
-            /// The zone to be loaded.
-            /// </summary>
-            public PlotZone Zone;
-        }
-
-        
+        private int _SignalTime;
+        private Rectangle _LastWindow;
         private PlotData _Data;
-        private PlotZone _MainZone;
+        private PlotNode _MainNode;
         private Gradient _Gradient;
         private double _Multiplier;
         private ThreadPool _LoadPool;
-        private LinkedList<_LoadingZone> _LoadingZones;
     }
 
     /// <summary>
-    /// A filled rectangular area shown in the Plot.
+    /// A filled rectangular area shown in the Plot. May have subnodes that together cover the node's full area.
     /// </summary>
-    public class PlotZone
+    public class PlotNode
     {
-        private PlotZone()
+        private PlotNode()
         {
-            this._SubZones = new LinkedList<PlotZone>();
+
         }
 
         /// <summary>
@@ -233,15 +186,24 @@ namespace MD.GUI
         }
 
         /// <summary>
-        /// Gets the sub zones for this zone. Sub zones are rendered above the main zone and intersect at least part of
-        /// the main zone's area. The order of subzones determines the order in which they are ordered after the main zone, with
-        /// the last sub zone being the most visible.
+        /// Gets if this node is currently loading.
         /// </summary>
-        public IEnumerable<PlotZone> SubZones
+        public bool Loading
         {
             get
             {
-                return this._SubZones;
+                return this._Loading;
+            }
+        }
+
+        /// <summary>
+        /// Gets the subnodes for this node, or null if they have yet to be created.
+        /// </summary>
+        public IEnumerable<PlotNode> SubNodes
+        {
+            get
+            {
+                return this._SubNodes;
             }
         }
 
@@ -254,34 +216,60 @@ namespace MD.GUI
             {
                 GL.DeleteTexture(this._Texture);
             }
-            foreach (PlotZone subzone in this._SubZones)
+            if (this._SubNodes != null)
             {
-                subzone._Delete();
+                foreach (PlotNode subnode in this._SubNodes)
+                {
+                    subnode._Delete();
+                }
             }
         }
 
-
         /// <summary>
-        /// Renders the zone and subzones to the given context.
+        /// Renders the node and subnodes to the given context.
         /// </summary>
         internal void _RenderRecursive(GUIRenderContext Context, Rectangle Window, Point Size, double Multiplier, Gradient Gradient)
         {
             if (!this._Loading)
             {
-                if (this._TextureNeedUpdate)
-                {
-                    this._UpdateTexture(Multiplier, Gradient);
-                }
                 if (this._Area.Intersects(Window))
                 {
-                    Rectangle rel = Window.ToRelative(this._Area);
-                    rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
-                    rel = rel.Scale(Size);
-                    Context.DrawTexture(this._Texture, Color.RGBA(1.0, 1.0, 1.0, this._Fade), rel);
-
-                    foreach (PlotZone pz in this._SubZones)
+                    // Check if this node needs to be rendered (if all children are loaded, no).
+                    bool needrender = false;
+                    foreach (PlotNode pn in this._SubNodes)
                     {
-                        pz._RenderRecursive(Context, Window, Size, Multiplier, Gradient);
+                        if (pn._Loading || pn._Fade < 1.0)
+                        {
+                            needrender = true;
+                        }
+                    }
+
+                    // Render and manage textures if needed
+                    if (needrender)
+                    {
+                        if (this._TextureNeedUpdate)
+                        {
+                            this._UpdateTexture(Multiplier, Gradient);
+                        }
+                        Rectangle rel = Window.ToRelative(this._Area);
+                        rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
+                        rel = rel.Scale(Size);
+                        Context.DrawTexture(this._Texture, Color.RGBA(1.0, 1.0, 1.0, this._Fade), rel);
+                    }
+                    else
+                    {
+                        if (this._Texture > 0)
+                        {
+                            GL.DeleteTexture(this._Texture);
+                            this._Texture = 0;
+                            this._TextureNeedUpdate = true;
+                        }
+                    }
+                    
+                    // Render subnodes
+                    foreach(PlotNode pn in this._SubNodes)
+                    {
+                        pn._RenderRecursive(Context, Window, Size, Multiplier, Gradient);
                     }
                 }
             }
@@ -290,11 +278,12 @@ namespace MD.GUI
         /// <summary>
         /// Creates a plot zone in the loading state.
         /// </summary>
-        internal static PlotZone _CreateLoading(PlotData.Zone Source)
+        internal static PlotNode _CreateLoading(PlotData.Zone Source)
         {
-            return new PlotZone()
+            return new PlotNode()
             {
                 _Loading = true,
+                _NeedLoad = true,
                 _Fade = 0.0,
                 _Source = Source,
                 _Area = Source.Area,
@@ -302,10 +291,48 @@ namespace MD.GUI
         }
 
         /// <summary>
+        /// Gets the next descendant subnode of this (including this) to load based on visibility and intrest giving the last used window.
+        /// </summary>
+        /// <param name="Priority">The relative priority for the item to be loaded.</param>
+        internal PlotNode _NextLoad(Rectangle Window, out double Priority)
+        {
+            Rectangle area = this._Area;
+            if (Window.Intersects(area))
+            {
+                Rectangle intersection = area.Intersection(Window);
+                double visibility = intersection.Size.X / Window.Size.X * intersection.Size.Y / Window.Size.Y;
+                if (this._NeedLoad)
+                {
+                    Priority = visibility;
+                    return this;
+                }
+                if (!this._Loading)
+                {
+                    PlotNode high = null;
+                    Priority = 0.0;
+                    foreach (PlotNode sn in this._SubNodes)
+                    {
+                        double snpriority;
+                        PlotNode snnext = sn._NextLoad(Window, out snpriority);
+                        if (snpriority > Priority)
+                        {
+                            high = snnext;
+                            Priority = snpriority;
+                        }
+                    }
+                    return high;
+                }
+            }
+            Priority = 0.0;
+            return null;
+        }
+
+        /// <summary>
         /// Loads the data needed for this zone.
         /// </summary>
         internal void _Load()
         {
+            this._NeedLoad = false;
             double pixels = 96 * 96;
             double sw = Math.Sqrt(pixels * this._Source.SampleRatio);
             double sh = pixels / sw;
@@ -317,6 +344,51 @@ namespace MD.GUI
             this._Source.GetData<_ArrayOutput>(w, h, ao);
             this._TextureNeedUpdate = true;
             this._Loading = false;
+        }
+
+        /// <summary>
+        /// Splits the node by creating subnodes.
+        /// </summary>
+        internal void _Split(PlotData SourceData)
+        {
+            List<double> XSplits = new List<double>(); XSplits.Add(0.0);
+            List<double> YSplits = new List<double>(); YSplits.Add(0.0);
+            this._Source.SuggestSplit(XSplits, YSplits);
+            XSplits.Add(1.0);
+            YSplits.Add(1.0);
+            this._Split(SourceData, XSplits, YSplits);
+        }
+
+        /// <summary>
+        /// Splits the node (by creating subnodes) along the given relative split-lines.
+        /// </summary>
+        private void _Split(PlotData SourceData, List<double> XSplits, List<double> YSplits)
+        {
+            Rectangle area = this._Area;
+
+            // Make split lines absolute
+            for (int t = 0; t < XSplits.Count; t++)
+            {
+                XSplits[t] = area.Location.X + XSplits[t] * area.Size.X;
+            }
+            for (int t = 0; t < YSplits.Count; t++)
+            {
+                YSplits[t] = area.Location.Y + YSplits[t] * area.Size.Y;
+            }
+
+            // Create sub nodes
+            int wnodes = XSplits.Count - 1;
+            int hnodes = YSplits.Count - 1;
+            this._SubNodes = new List<PlotNode>(wnodes * hnodes);
+            for (int x = 0; x < wnodes; x++)
+            {
+                for (int y = 0; y < hnodes; y++)
+                {
+                    Rectangle subrect = new Rectangle(XSplits[x], YSplits[y], XSplits[x + 1], YSplits[y + 1]);
+                    subrect.Size -= subrect.Location;
+                    this._SubNodes.Add(_CreateLoading(SourceData.GetZone(subrect)));
+                }
+            }
         }
 
         /// <summary>
@@ -376,14 +448,7 @@ namespace MD.GUI
             this._TextureNeedUpdate = false;
         }
 
-        /// <summary>
-        /// Adds the specified zone as a sub zone above all others.
-        /// </summary>
-        internal void _AddSubZone(PlotZone SubZone)
-        {
-            this._SubZones.AddLast(SubZone);
-        }
-
+        internal bool _NeedLoad;
         internal bool _Loading;
         internal bool _TextureNeedUpdate;
         internal double _Fade;
@@ -394,8 +459,8 @@ namespace MD.GUI
         private int _Texture;
         
         private Rectangle _Area;
-        private LinkedList<PlotZone> _SubZones;
-        internal PlotData.Zone _Source;
+        private List<PlotNode> _SubNodes;
+        private PlotData.Zone _Source;
     }
 
     /// <summary>
@@ -427,6 +492,17 @@ namespace MD.GUI
             /// Gets the optimal ratio of width samples to height samples for the data.
             /// </summary>
             public abstract double SampleRatio { get; }
+
+            /// <summary>
+            /// If this zone were to be split into subzones that cover the total area, gets the relative
+            /// lines along the zone that indicate where the splits should occur for optimal performance
+            /// and visibility.
+            /// </summary>
+            public virtual void SuggestSplit(List<double> XSplits, List<double> YSplits)
+            {
+                XSplits.Add(0.5);
+                YSplits.Add(0.5);
+            }
 
             /// <summary>
             /// An interface that can accept the output from GetData.
