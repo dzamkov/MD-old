@@ -30,28 +30,10 @@ namespace MD.GUI
                     new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
                 });
             this._Multiplier = 400.0;
-            this._ThreadPool = new ThreadPool();
-            this._ThreadPool.TargetThreadAmount = 1;
-            this._ActionQueue = new List<Action>();
-
-            // Load the main zone
-            Rectangle domain = Data.Domain;
-            this._ThreadPool.AppendTask(delegate
-            {
-                Func<PlotZone> pz = PlotZone._Create(this._Data.GetZone(domain), this._Multiplier, this._Gradient);
-                lock (this)
-                {
-                    this._ActionQueue.Add(delegate
-                    {
-                        PlotZone main = pz();
-                        if (this._MainZone != null)
-                        {
-                            main._SubZones.AddLast(this._MainZone);
-                        }
-                        this._MainZone = main;
-                    });
-                }
-            });
+            this._LoadPool = new ThreadPool(this._NextTask);
+            this._LoadPool.TargetThreadAmount = 3;
+            this._LoadingZones = new LinkedList<_LoadingZone>();
+            this._MainZone = this._Load(Data.Domain);
         }
 
         /// <summary>
@@ -64,7 +46,7 @@ namespace MD.GUI
             Context.PushClip(new Rectangle(Size));
             if(this._MainZone != null)
             {
-                this._MainZone._RenderRecursive(Context, Window, Size);
+                this._MainZone._RenderRecursive(Context, Window, Size, this._Multiplier, this._Gradient);
             }
             Context.Pop();
         }
@@ -76,45 +58,33 @@ namespace MD.GUI
         /// <param name="Window">The area currently seen in the plot.</param>
         public void Update(Rectangle Window, double Time)
         {
-            // Action queue!
-            lock (this)
-            {
-                List<Action> olqueue = this._ActionQueue;
-                this._ActionQueue = new List<Action>();
-                foreach (Action action in olqueue)
-                {
-                    action();
-                }
-            }
-
             // Update zones
-            if (this._MainZone != null)
-            {
-                this._UpdateZone(this._MainZone, Time);
-            }
+            this._UpdateZone(this._MainZone, Window, Time);
         }
 
-        private void _UpdateZone(PlotZone Zone, double Time)
+        private void _UpdateZone(PlotZone Zone, Rectangle Window, double Time)
         {
-            const double FadeTime = 0.5;
-            Zone._Fade = Math.Min(1.0, Zone._Fade + (Time / FadeTime));
-
-
-            foreach (PlotZone subzone in Zone._SubZones)
+            if (!Zone._Loading)
             {
-                this._UpdateZone(subzone, Time);
-            }
-        }
+                const double FadeTime = 0.5;
+                Zone._Fade = Math.Min(1.0, Zone._Fade + (Time / FadeTime));
 
-        /// <summary>
-        /// Forces an area to be loaded on the calling thread (this may take a while).
-        /// </summary>
-        public void Load(Rectangle Area)
-        {
-            if (this._Data != null)
-            {
-                PlotZone pz = PlotZone._Create(this._Data.GetZone(Area), this._Multiplier, this._Gradient)();
-                this._AddToTop(pz);
+                // Split if needed
+                bool hassubzones = false;
+                foreach (PlotZone sub in Zone.SubZones)
+                {
+                    hassubzones = true;
+                    break;
+                }
+                if (!hassubzones)
+                {
+                    this._Split(Zone, 2, 2);
+                }
+
+                foreach (PlotZone subzone in Zone.SubZones)
+                {
+                    this._UpdateZone(subzone, Window, Time);
+                }
             }
         }
 
@@ -124,8 +94,6 @@ namespace MD.GUI
         /// </summary>
         private void _Split(PlotZone Zone, int X, int Y)
         {
-            Zone._Splitting = true;
-
             Rectangle area = Zone.Area;
             Point nsize = area.Size.Scale(new Point(1.0 / X, 1.0 / Y));
             int zones = X * Y;
@@ -134,58 +102,8 @@ namespace MD.GUI
                 for (int y = 0; y < Y; y++)
                 {
                     Rectangle rect = new Rectangle(area.Location + new Point(nsize.X * x, nsize.Y * y), nsize);
-                    this._ThreadPool.AppendTask(delegate
-                    {
-                        Func<PlotZone> pz = PlotZone._Create(this._Data.GetZone(rect), this._Multiplier, this._Gradient);
-                        lock (this)
-                        {
-                            this._ActionQueue.Add(delegate
-                            {
-                                Zone._SubZones.AddLast(pz());
-                            });
-                        }
-                    });
+                    Zone._AddSubZone(this._Load(rect));
                 }
-            }
-        }
-
-        /// <summary>
-        /// Adds the given zone above all other zones.
-        /// </summary>
-        private void _AddToTop(PlotZone Zone)
-        {
-            if (this._MainZone == null)
-            {
-                this._MainZone = Zone;
-            }
-            else
-            {
-                this._AddAbove(this._MainZone, Zone);
-            }
-        }
-
-        /// <summary>
-        /// Adds the target zone as the highest zone above the given zone.
-        /// </summary>
-        private void _AddAbove(PlotZone Cur, PlotZone Target)
-        {
-            LinkedListNode<PlotZone> onto = null;
-            LinkedListNode<PlotZone> cur = Cur._SubZones.First;
-            while (cur != null)
-            {
-                if (cur.Value.Area.Intersects(Target.Area))
-                {
-                    onto = cur;
-                }
-                cur = cur.Next;
-            }
-            if (onto == null)
-            {
-                Cur._SubZones.AddLast(Target);
-            }
-            else
-            {
-                this._AddAbove(onto.Value, Target);
             }
         }
 
@@ -227,12 +145,70 @@ namespace MD.GUI
             this._MainZone._Delete();
         }
 
+        /// <summary>
+        /// Loads the specified area.
+        /// </summary>
+        internal PlotZone _Load(Rectangle Area)
+        {
+            PlotZone pz = PlotZone._CreateLoading(this._Data.GetZone(Area));
+            lock (this)
+            {
+                this._LoadingZones.AddFirst(new _LoadingZone()
+                {
+                    Zone = pz
+                });
+                this._LoadPool.Signal();
+            }
+            return pz;
+        }
+
+        /// <summary>
+        /// Gets the next task for the load thread pool.
+        /// </summary>
+        private Action _NextTask()
+        {
+            lock (this)
+            {
+                LinkedListNode<_LoadingZone> cur = this._LoadingZones.First;
+                LinkedListNode<_LoadingZone> highest = null;
+                while (cur != null)
+                {
+                    if (highest == null || cur.Value.Priority > highest.Value.Priority)
+                    {
+                        highest = cur;
+                    }
+                    cur = cur.Next;
+                }
+                if (highest != null)
+                {
+                    PlotZone toload = highest.Value.Zone;
+                    this._LoadingZones.Remove(highest);
+                    return toload._Load;
+                }
+            }
+            return null;
+        }
+
+        private class _LoadingZone
+        {
+            /// <summary>
+            /// The priority for this zone to be loaded.
+            /// </summary>
+            public double Priority;
+
+            /// <summary>
+            /// The zone to be loaded.
+            /// </summary>
+            public PlotZone Zone;
+        }
+
+        
         private PlotData _Data;
         private PlotZone _MainZone;
         private Gradient _Gradient;
         private double _Multiplier;
-        private ThreadPool _ThreadPool;
-        private List<Action> _ActionQueue;
+        private ThreadPool _LoadPool;
+        private LinkedList<_LoadingZone> _LoadingZones;
     }
 
     /// <summary>
@@ -274,7 +250,10 @@ namespace MD.GUI
         /// </summary>
         internal void _Delete()
         {
-            GL.DeleteTexture(this._Texture);
+            if (this._Texture > 0)
+            {
+                GL.DeleteTexture(this._Texture);
+            }
             foreach (PlotZone subzone in this._SubZones)
             {
                 subzone._Delete();
@@ -285,98 +264,137 @@ namespace MD.GUI
         /// <summary>
         /// Renders the zone and subzones to the given context.
         /// </summary>
-        internal void _RenderRecursive(GUIRenderContext Context, Rectangle Window, Point Size)
+        internal void _RenderRecursive(GUIRenderContext Context, Rectangle Window, Point Size, double Multiplier, Gradient Gradient)
         {
-            if (this._Area.Intersects(Window))
+            if (!this._Loading)
             {
-                Rectangle rel = Window.ToRelative(this._Area);
-                rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
-                rel = rel.Scale(Size);
-                Context.DrawTexture(this._Texture, Color.RGBA(1.0, 1.0, 1.0, this._Fade), rel);
-
-                foreach (PlotZone pz in this._SubZones)
+                if (this._TextureNeedUpdate)
                 {
-                    pz._RenderRecursive(Context, Window, Size);
+                    this._UpdateTexture(Multiplier, Gradient);
+                }
+                if (this._Area.Intersects(Window))
+                {
+                    Rectangle rel = Window.ToRelative(this._Area);
+                    rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
+                    rel = rel.Scale(Size);
+                    Context.DrawTexture(this._Texture, Color.RGBA(1.0, 1.0, 1.0, this._Fade), rel);
+
+                    foreach (PlotZone pz in this._SubZones)
+                    {
+                        pz._RenderRecursive(Context, Window, Size, Multiplier, Gradient);
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// Creates a plot zone from a data source. Note that the function returned has to be called on the main thread (in order to
-        /// create textures).
+        /// Creates a plot zone in the loading state.
         /// </summary>
-        internal static Func<PlotZone> _Create(PlotData.Zone Source, double Multiplier, Gradient Gradient)
+        internal static PlotZone _CreateLoading(PlotData.Zone Source)
         {
-            double pixels = 128 * 128;
-            double sw = Math.Sqrt(pixels * Source.SampleRatio);
-            double sh = pixels / sw;
-            int w = (int)sw;
-            int h = (int)sh;
-            _TextureOutput to = new _TextureOutput(w, h, Multiplier, Gradient);
-            Source.GetData<_TextureOutput>(w, h, to);
-            return delegate
+            return new PlotZone()
             {
-                return new PlotZone()
-                {
-                    _Texture = to.CreateTexture(),
-                    _Area = Source.Area,
-                    _Fade = 0.0,
-                    _Source = Source,
-                };
+                _Loading = true,
+                _Fade = 0.0,
+                _Source = Source,
+                _Area = Source.Area,
             };
         }
 
-        private class _TextureOutput : PlotData.Zone.IDataOutput
+        /// <summary>
+        /// Loads the data needed for this zone.
+        /// </summary>
+        internal void _Load()
         {
-            public _TextureOutput(int Width, int Height, double Multiplier, Gradient Gradient)
+            double pixels = 96 * 96;
+            double sw = Math.Sqrt(pixels * this._Source.SampleRatio);
+            double sh = pixels / sw;
+            int w = (int)sw;
+            int h = (int)sh;
+            this._Width = w;
+            this._Height = h;
+            _ArrayOutput ao = new _ArrayOutput(w, h, ref this._Data);
+            this._Source.GetData<_ArrayOutput>(w, h, ao);
+            this._TextureNeedUpdate = true;
+            this._Loading = false;
+        }
+
+        /// <summary>
+        /// Plot data output to an array.
+        /// </summary>
+        private class _ArrayOutput : PlotData.Zone.IDataOutput
+        {
+            public _ArrayOutput(int Width, int Height, ref double[] Data)
             {
+                this._Data = Data = new double[Width * Height];
                 this._Width = Width;
-                this._Height = Height;
-                this._Data = new byte[Width * Height * 4];
-                this._Multiplier = Multiplier;
-                this._Gradient = Gradient;
             }
 
             public void Set(int X, int Y, double Value)
             {
-                Value *= this._Multiplier;
-                Color col = this._Gradient.GetColor(Value);
-                byte r = (byte)(col.R * 255.0);
-                byte g = (byte)(col.G * 255.0);
-                byte b = (byte)(col.B * 255.0);
-                int i = (X + Y * this._Width) * 4;
-                byte[] data = this._Data;
-                data[i + 0] = b;
-                data[i + 1] = g;
-                data[i + 2] = r;
-                data[i + 3] = 255;
-            }
-
-            public int CreateTexture()
-            {
-                int id = GL.GenTexture();
-                GL.BindTexture(TextureTarget.Texture2D, id);
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, this._Width, this._Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, this._Data);
-                GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
-                return id;
+                this._Data[X + Y * this._Width] = Value;
             }
 
             private int _Width;
-            private int _Height;
-            private byte[] _Data;
-            private double _Multiplier;
-            private Gradient _Gradient;
+            private double[] _Data;
         }
 
-        internal bool _Splitting;
-        private int _Texture;
+        /// <summary>
+        /// Updates the texture for the zone.
+        /// </summary>
+        private void _UpdateTexture(double Multiplier, Gradient Gradient)
+        {
+            if (this._Texture > 0)
+            {
+                GL.DeleteTexture(this._Texture);
+            }
+            byte[] pdat = new byte[this._Width * this._Height * 4];
+            for (int i = 0; i < this._Data.Length; i++)
+            {
+                double val = this._Data[i];
+                val *= Multiplier;
+                val = Math.Min(val, 1.0);
+                Color col = Gradient.GetColor(val);
+                byte r = (byte)(col.R * 255.0);
+                byte g = (byte)(col.G * 255.0);
+                byte b = (byte)(col.B * 255.0);
+                pdat[i * 4 + 0] = b;
+                pdat[i * 4 + 1] = g;
+                pdat[i * 4 + 2] = r;
+                pdat[i * 4 + 3] = 255;
+            }
+
+            int id = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, id);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, this._Width, this._Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pdat);
+            GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
+            this._Texture = id;
+            this._TextureNeedUpdate = false;
+        }
+
+        /// <summary>
+        /// Adds the specified zone as a sub zone above all others.
+        /// </summary>
+        internal void _AddSubZone(PlotZone SubZone)
+        {
+            this._SubZones.AddLast(SubZone);
+        }
+
+        internal bool _Loading;
+        internal bool _TextureNeedUpdate;
         internal double _Fade;
+
+        private double[] _Data;
+        private int _Width;
+        private int _Height;
+        private int _Texture;
+        
         private Rectangle _Area;
-        internal LinkedList<PlotZone> _SubZones;
+        private LinkedList<PlotZone> _SubZones;
         internal PlotData.Zone _Source;
     }
 

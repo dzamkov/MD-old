@@ -99,7 +99,12 @@ namespace MD.GUI
             {
                 get
                 {
-                    return 2048 >> (int)(this._MeanOffset);
+                    int winsize = 2 << (int)(11 - this._MeanOffset);
+                    if (winsize < 64)
+                    {
+                        winsize = 64;
+                    }
+                    return winsize;
                 }
             }
 
@@ -118,7 +123,7 @@ namespace MD.GUI
             {
                 get
                 {
-                    return Math.Pow(1.1, this._MeanOffset) / Math.Pow(0.9, this._MeanOffset);
+                    return Math.Pow(1.05, this._MeanOffset) / Math.Pow(0.95, this._MeanOffset);
                 }
             }
 
