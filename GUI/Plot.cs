@@ -137,7 +137,7 @@ namespace MD.GUI
             {
                 next = this._MainNode._NextLoad(this._LastWindow, out priority);
             }
-            if (next != null && priority > 0.1)
+            if (next != null && priority > 0.001)
             {
                 return delegate
                 {
@@ -332,12 +332,8 @@ namespace MD.GUI
         /// </summary>
         internal void _Load()
         {
-            this._NeedLoad = false;
-            double pixels = 96 * 96;
-            double sw = Math.Sqrt(pixels * this._Source.SampleRatio);
-            double sh = pixels / sw;
-            int w = (int)sw;
-            int h = (int)sh;
+            int w, h;
+            this._Source.GetSuggestedSamples(out w, out h);
             this._Width = w;
             this._Height = h;
             _ArrayOutput ao = new _ArrayOutput(w, h, ref this._Data);
@@ -489,9 +485,13 @@ namespace MD.GUI
             public abstract Rectangle Area { get; }
 
             /// <summary>
-            /// Gets the optimal ratio of width samples to height samples for the data.
+            /// Gets the suggested width and height (in samples) of the zone.
             /// </summary>
-            public abstract double SampleRatio { get; }
+            public virtual void GetSuggestedSamples(out int Width, out int Height)
+            {
+                Width = 128;
+                Height = 128;
+            }
 
             /// <summary>
             /// If this zone were to be split into subzones that cover the total area, gets the relative

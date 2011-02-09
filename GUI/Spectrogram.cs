@@ -83,13 +83,6 @@ namespace MD.GUI
             {
                 this._Area = Area;
                 this._Source = Source;
-
-                double minfreq = Area.Location.Y;
-                double maxfreq = minfreq + Area.Size.Y;
-                double meanfreq = (maxfreq - minfreq) / (Math.Log(maxfreq) - Math.Log(minfreq + 1.0));
-                double logmean = Math.Log(meanfreq);
-                const double targmean = 5.7;
-                this._MeanOffset = (logmean - targmean);
             }
 
             /// <summary>
@@ -99,12 +92,7 @@ namespace MD.GUI
             {
                 get
                 {
-                    int winsize = 2 << (int)(11 - this._MeanOffset);
-                    if (winsize < 64)
-                    {
-                        winsize = 64;
-                    }
-                    return winsize;
+                    return 2048;
                 }
             }
 
@@ -115,16 +103,19 @@ namespace MD.GUI
             {
                 get
                 {
-                    return 0.028 * Math.Pow(0.5, this._MeanOffset);
+                    return 0.028;
                 }
             }
 
-            public override double SampleRatio
+            public override void SuggestSplit(List<double> XSplits, List<double> YSplits)
             {
-                get
-                {
-                    return Math.Pow(1.05, this._MeanOffset) / Math.Pow(0.95, this._MeanOffset);
-                }
+                XSplits.Add(0.5);
+            }
+
+            public override void GetSuggestedSamples(out int Width, out int Height)
+            {
+                Height = this.WindowSize;
+                Width = 2;
             }
 
             public override Rectangle Area
@@ -189,7 +180,6 @@ namespace MD.GUI
                 }
             }
 
-            private double _MeanOffset;
             private Rectangle _Area;
             private AudioSource _Source;
         }
