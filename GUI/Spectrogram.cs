@@ -12,12 +12,11 @@ namespace MD.GUI
     /// <summary>
     /// An interactive spectrogram created for an audio source.
     /// </summary>
-    public class Spectrogram : View
+    public class SpectrogramView : View
     {
-        public Spectrogram(AudioSource Source)
+        public SpectrogramView(AudioSource Source)
         {
-            this._Data = new SpectrogramData(Source);
-            this._Plot = new Plot(this._Data);
+            this._Graph = new SpectrogramGraph(Source);
             this.Window = this.Domain;
         }
 
@@ -25,169 +24,227 @@ namespace MD.GUI
         {
             get
             {
-                return this._Data.Domain;
+                return this._Graph.Domain;
             }
         }
 
         public override void Render(GUIRenderContext Context)
         {
-            this._Plot.Render(Context, this.Size, this.Window);
+            base.Render(Context);
+            this._Graph.Render(Context, this.Size, this.Window);
         }
 
         public override void Update(GUIControlContext Context, double Time)
         {
-            this._Plot.Update(this.Window, Time);
             base.Update(Context, Time);
+            this._Graph.Update(this.Window, Time);
         }
 
         protected override void OnDispose()
         {
-            this._Plot.Dispose();
-            base.OnDispose();
+
         }
 
-        private SpectrogramData _Data;
-        private Plot _Plot;
+        private SpectrogramGraph _Graph;
     }
 
     /// <summary>
-    /// Plot data for a spectrogram of an audio source.
+    /// A graph that shows a spectrogram.
     /// </summary>
-    public class SpectrogramData : PlotData
+    public class SpectrogramGraph : Graph
     {
-        public SpectrogramData(AudioSource Source)
+        public SpectrogramGraph(AudioSource Source)
         {
             this._Source = Source;
+            this._TexturesPerNode = 4;
+            this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.028, this._Source.SampleRate, 2048);
+            this._Root = new _RenderNode(this._TexturesPerNode);
+            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 32);
+
+            this._LastWindow = this.Domain;
+            this._LoadPool = new ThreadPool(this._NextTask);
+            this._LoadPool.Start();
         }
 
         public override Rectangle Domain
         {
             get
             {
-                AudioSource source = this._Source;
-                return new Rectangle(0.0, 0.0, (double)source.Size / source.SampleRate, source.SampleRate / 2.0);
+                return Spectrogram.GetDomain(this._Source.SampleRate, this._Source.Size);
             }
         }
 
-        public override PlotData.Zone GetZone(Rectangle Area)
+        public override void Render(GUIRenderContext Context, Point Size, Rectangle Window)
         {
-            return new Zone(Area, this._Source);
+            this._Root.Render(Context, Size, Window, this._Source, this._SpectrumWindow);
+        }
+
+        public override void Update(Rectangle Window, double Time)
+        {
+            this._LastWindow = Window;
         }
 
         /// <summary>
-        /// Zone for spectrogram data.
+        /// A node with rendering information.
         /// </summary>
-        public new class Zone : PlotData.Zone
+        private class _RenderNode : SpectrogramNode<_RenderNode>
         {
-            public Zone(Rectangle Area, AudioSource Source)
+            public _RenderNode(int TexturesPerNode)
             {
-                this._Area = Area;
-                this._Source = Source;
+                this.Textures = new int[TexturesPerNode];
             }
 
             /// <summary>
-            /// Gets the size of the window to use to perform the fourier transform.
+            /// Creates one of the textures for this node.
             /// </summary>
-            public int WindowSize
+            public int CreateTexture(int Texture, AudioSource Source, double[] SpectrumWindow)
             {
-                get
+                int w = this.TimeSamples;
+                int fh = SpectrumWindow.Length;
+                int h = fh / this.Textures.Length;
+                int o = Texture * h;
+                Complex[][] data = this.Data;
+                double[] texdata = new double[h * w];
+                for (int x = 0; x < w; x++)
                 {
-                    return 2048;
-                }
-            }
-
-            /// <summary>
-            /// Gets the scale of the gaussian window to use for the gabor transform.
-            /// </summary>
-            public double GaussScale
-            {
-                get
-                {
-                    return 0.028;
-                }
-            }
-
-            public override void SuggestSplit(List<double> XSplits, List<double> YSplits)
-            {
-                XSplits.Add(0.5);
-            }
-
-            public override void GetSuggestedSamples(out int Width, out int Height)
-            {
-                Height = this.WindowSize;
-                Width = 2;
-            }
-
-            public override Rectangle Area
-            {
-                get
-                {
-                    return this._Area;
-                }
-            }
-
-            public override void GetData<TOutput>(int Width, int Height, TOutput Output)
-            {
-                double[] window = _CreateGaborWindow(this.GaussScale, this._Source.SampleRate, this.WindowSize);
-
-                // Calculate sizes
-                int sr = this._Source.SampleRate;
-                int c = this._Source.Channels;
-                int ts = (int)(sr * this.Area.Size.X);
-                int pad = window.Length;
-                int fs = ts + pad + pad;
-
-                // Read required data
-                double[] sdat = new double[fs * c];
-                int sourcesize = this._Source.Size;
-                int readsize = fs;
-                int start = (int)(sr * this.Area.Location.X) - pad;
-                int offset = 0;
-                if(start < 0)
-                {
-                    readsize += start;
-                    offset -= start * c;
-                    start = 0;
-                }
-                if(readsize + start >= sourcesize)
-                {
-                    readsize = sourcesize - start;
-                }
-                if (readsize > 0)
-                {
-                    this._Source.ReadDouble(start, readsize, sdat, offset);
-                }
-
-                // Begin filling data
-                Complex[] fftoutput = new Complex[window.Length * 2];
-                for (int x = 0; x < Width; x++)
-                {
-                    int midsample = pad + (int)((x / (double)Width) * ts);
-                    _WindowedSignal ws = new _WindowedSignal(window, sdat, midsample, c);
-                    FFT.OnSignal<_WindowedSignal>(ws, false, fftoutput, fftoutput.Length);
-                    for (int y = 0; y < Height; y++)
+                    for (int y = 0; y < h; y++)
                     {
-                        double freq = this.Area.Location.Y + this.Area.Size.Y * ((Height - y - 1) / (double)Height);
-                        double fftsamp = FFT.GetSample(freq, fftoutput.Length, sr);
-                        int isamp = (int)fftsamp;
-                        double rsamp = fftsamp - (double)isamp;
-                        Complex val = fftoutput[isamp];
-                        Complex nval = fftoutput[isamp];
+                        texdata[x + y * w] = data[x][(fh - y - o - 1)].Abs;
+                    }
+                }
+                return this.Textures[Texture] = Plot.CreateTexture(w, h, texdata, 200.0, Plot.DefaultGradient);
+            }
 
-                        double aval = val.Abs * (1.0 - rsamp) + nval.Abs * rsamp;
-                        Output.Set(x, y, aval);
+            /// <summary>
+            /// Renders this node.
+            /// </summary>
+            public void Render(GUIRenderContext Context, Point Size, Rectangle Window, AudioSource Source, double[] SpectrumWindow)
+            {
+                if (this.Loaded)
+                {
+                    Rectangle area = this.GetArea(Source.SampleRate);
+                    Point texturesize = area.Size; texturesize.Y /= this.Textures.Length;
+                    for (int t = 0; t < this.Textures.Length; t++)
+                    {
+                        Rectangle texturerect = new Rectangle(new Point(area.Location.X, area.Location.Y + area.Size.Y - texturesize.Y * (t + 1)), texturesize);
+                        if (Window.Intersects(texturerect))
+                        {
+                            int tex = this.Textures[t];
+                            if (tex == 0)
+                            {
+                                tex = this.CreateTexture(t, Source, SpectrumWindow);
+                            }
+                            Rectangle rel = Window.ToRelative(texturerect);
+                            rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
+                            rel = rel.Scale(Size);
+                            Context.DrawTexture(tex, rel);
+                        }
+                        else
+                        {
+                            int tex = this.Textures[t];
+                            /*if (tex != 0)
+                            {
+                                GL.DeleteTexture(tex);
+                                this.Textures[t] = 0;
+                            }*/
+                        }
+                    }
+                    if (this.LeftSubNode != null)
+                    {
+                        this.LeftSubNode.Render(Context, Size, Window, Source, SpectrumWindow);
+                    }
+                    if (this.RightSubNode != null)
+                    {
+                        this.RightSubNode.Render(Context, Size, Window, Source, SpectrumWindow);
                     }
                 }
             }
 
-            private Rectangle _Area;
-            private AudioSource _Source;
+            /// <summary>
+            /// Gets the next node that needs loading.
+            /// </summary>
+            public _RenderNode NextToLoad(Rectangle LastWindow, AudioSource Source)
+            {
+                _RenderNode res = null;
+                if (!this.Loaded)
+                {
+                    if (_Visibility(this.GetArea(Source.SampleRate), LastWindow) > 0.1)
+                    {
+                        res = this;
+                    }
+                }
+                if (this.LeftSubNode != null)
+                {
+                    res = res ?? this.LeftSubNode.NextToLoad(LastWindow, Source);
+                }
+                if (this.RightSubNode != null)
+                {
+                    res = res ?? this.RightSubNode.NextToLoad(LastWindow, Source);
+                }
+                return res;
+            }
+
+            public int[] Textures;
         }
 
         /// <summary>
-        /// Creates a window for the gabor transform.
+        /// Gets the portion of common area (out of the total area of B) the rectangles have.
         /// </summary>
-        private static double[] _CreateGaborWindow(double Scale, int SampleRate, int Size)
+        private static double _Visibility(Rectangle A, Rectangle B)
+        {
+            if (A.Intersects(B))
+            {
+                Rectangle i = A.Intersection(B);
+                return i.Size.X / B.Size.X * i.Size.Y / B.Size.Y;
+            }
+            return 0.0;
+        }
+
+        /// <summary>
+        /// Gets the next task for the load thread pool.
+        /// </summary>
+        private Action _NextTask()
+        {
+            _RenderNode rn = this._Root.NextToLoad(this._LastWindow, this._Source);
+            if (rn != null)
+            {
+                return delegate
+                {
+                    rn.Load(this._Source, this._SpectrumWindow);
+                    rn.Split(new _RenderNode(this._TexturesPerNode), new _RenderNode(this._TexturesPerNode));
+                };
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private int _TexturesPerNode;
+        private double[] _SpectrumWindow;
+        private ThreadPool _LoadPool;
+        private Rectangle _LastWindow;
+        private _RenderNode _Root;
+        private AudioSource _Source;
+    }
+
+    /// <summary>
+    /// Contains spectrogram-related functionality.
+    /// </summary>
+    public class Spectrogram
+    {
+        /// <summary>
+        /// Gets the spectrogram domain for an audio source of the specified sample rate and size.
+        /// </summary>
+        public static Rectangle GetDomain(int SampleRate, int Size)
+        {
+            return new Rectangle(0.0, 0.0, Size / (double)SampleRate, (double)SampleRate / 2.0);
+        }
+
+        /// <summary>
+        /// Creates a window for the gabor transform, used to create a spectrogram.
+        /// </summary>
+        public static double[] CreateGaborWindow(double Scale, int SampleRate, int Size)
         {
             double[] win = new double[Size];
             double total = 0.0;
@@ -206,33 +263,268 @@ namespace MD.GUI
         }
 
         /// <summary>
-        /// A signal created by applying a symmetric window to an array.
+        /// Calculates a frequency spectrum for a sample in an audio source using the specified symmetric window. The size of the output
+        /// will be the same as the size of the window.
+        /// </summary>
+        public static Complex[] CalculateSample(AudioSource Source, double[] Window, int Sample)
+        {
+            int c = Source.Channels;
+            int hwinsize = Window.Length;
+            int winsize = hwinsize * 2;
+            Complex[] output = new Complex[winsize];
+            double[] data = new double[winsize * c];
+            Source.ReadDoublePad(Sample - hwinsize, winsize, data, 0);
+
+            _WindowedSignal signal = new _WindowedSignal(data, Window, c);
+            FFT.OnSignal<_WindowedSignal>(signal, false, output, winsize);
+
+            // The upper half of the output is redundant.
+            Complex[] houtput = new Complex[hwinsize];
+            for (int t = 0; t < hwinsize; t++)
+            {
+                houtput[t] = output[t];
+            }
+
+            return houtput;
+        }
+
+        /// <summary>
+        /// Input signal for a FFT on a windowed portion of the source data.
         /// </summary>
         private class _WindowedSignal : IComplexSignal
         {
-            public _WindowedSignal(double[] Window, double[] Source, int Offset, int Channels)
+            public _WindowedSignal(double[] Data, double[] Window, int Channels)
             {
+                this._Data = Data;
                 this._Window = Window;
-                this._Source = Source;
-                this._Offset = Offset;
+                this._HWindowSize = Window.Length;
                 this._Channels = Channels;
             }
 
             public Complex Get(int Index)
             {
-                Index -= this._Window.Length;
-                int windex = Index;
-                int sindex = this._Offset + Index;
-                if (windex < 0) windex = -1 - windex;
-                return this._Source[sindex * this._Channels] * this._Window[windex];
+                int winindex = Index - this._HWindowSize;
+                if (winindex < 0)
+                {
+                    winindex = -1 - winindex;
+                }
+                return this._Data[Index * this._Channels] * this._Window[winindex];
             }
 
+            private double[] _Data;
             private double[] _Window;
-            private double[] _Source;
-            private int _Offset;
+            private int _HWindowSize;
             private int _Channels;
         }
+    }
 
-        private AudioSource _Source;
+    /// <summary>
+    /// A section of evenly spaced samples in a spectrogram tree. Spectrogram nodes may contain
+    /// children which have more densely packed samples over a smaller area.
+    /// </summary>
+    public class SpectrogramNode<TNode>
+        where TNode : SpectrogramNode<TNode>
+    {
+        public SpectrogramNode()
+        {
+
+        }
+
+        /// <summary>
+        /// Gets the area of this node in the time-frequency domain given the sample rate of the input source.
+        /// </summary>
+        public Rectangle GetArea(int SampleRate)
+        {
+            return new Rectangle(this._Start / (double)SampleRate, 0.0, this._Size / (double)SampleRate, (double)SampleRate / 2.0);
+        }
+
+        /// <summary>
+        /// Fills the data for the node.
+        /// </summary>
+        /// <param name="Start">The start sample of the node.</param>
+        /// <param name="Size">The size of the node, must be a power of 2 equal or larger than TimeSamples</param>
+        /// <param name="TimeSamples">The amount of time samples in a node.</param>
+        public void Fill(int Start, int Size, int TimeSamples)
+        {
+            this._Start = Start;
+            this._Size = Size;
+            this._Data = new Complex[TimeSamples][];
+        }
+
+        /// <summary>
+        /// Gets the amount of samples in time this node has.
+        /// </summary>
+        public int TimeSamples
+        {
+            get
+            {
+                return this._Data.Length;
+            }
+        }
+
+        /// <summary>
+        /// Gets the left sub node (the first one in time) for this node.
+        /// </summary>
+        public TNode LeftSubNode
+        {
+            get
+            {
+                return this._LeftSubNode;
+            }
+        }
+
+        /// <summary>
+        /// Gets the right sub node for this node.
+        /// </summary>
+        public TNode RightSubNode
+        {
+            get
+            {
+                return this._RightSubNode;
+            }
+        }
+
+        /// <summary>
+        /// Loads the data for this node if it is not already loaded. This call is thread safe.
+        /// </summary>
+        public void Load(AudioSource Source, double[] Window)
+        {
+            lock (this)
+            {
+                if (this.Loading || this.Loaded)
+                {
+                    return;
+                }
+                this._Loading = true;
+            }
+            int nodesamples = this._Data.Length;
+            int step = this._Size / nodesamples;
+            int cur = this._Start;
+            for (int t = 0; t < nodesamples; t++)
+            {
+                if (this._Data[t] == null)
+                {
+                    this._Data[t] = Spectrogram.CalculateSample(Source, Window, cur);
+                }
+                cur += step;
+            }
+            this._Loaded = true;
+            this._Loading = false;
+        }
+
+        /// <summary>
+        /// Sets and fills the left and right subnodes for this nodes. This node must be loaded for a sucsessful split.
+        /// </summary>
+        /// <returns>True on sucsess, false on failure (because the split is invalid)</returns>
+        public bool Split(TNode Left, TNode Right)
+        {
+            int scount = this._Data.Length;
+            if (this._Loaded && this._Size > scount)
+            {
+                // Set
+                this._LeftSubNode = Left;
+                this._RightSubNode = Right;
+
+                // Fill
+                int hsize = this._Size / 2;
+                Left.Fill(this._Start, hsize, scount);
+                Right.Fill(this._Start + hsize, hsize, scount);
+
+                // Copy common samples
+                int hscount = scount / 2;
+                for (int t = 0; t < hscount; t++)
+                {
+                    Left._Data[t * 2] = this._Data[t];
+                    Right._Data[t * 2] = this._Data[t + hscount];
+                }
+
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Gets the data array for the node.
+        /// </summary>
+        public Complex[][] Data
+        {
+            get
+            {
+                return this._Data;
+            }
+        }
+
+        /// <summary>
+        /// Gets the first time sample in this node's region.
+        /// </summary>
+        public int Start
+        {
+            get
+            {
+                return this._Start;
+            }
+        }
+
+        /// <summary>
+        /// Gets the size of the node's region in samples.
+        /// </summary>
+        public int Size
+        {
+            get
+            {
+                return this._Size;
+            }
+        }
+
+        /// <summary>
+        /// Gets if all the sample's for the node have been loaded (not including descendants).
+        /// </summary>
+        public bool Loaded
+        {
+            get
+            {
+                return this._Loaded;
+            }
+        }
+
+        /// <summary>
+        /// Gets if this node is loading samples on another thread.
+        /// </summary>
+        public bool Loading
+        {
+            get
+            {
+                return this._Loading;
+            }
+        }
+
+        private bool _Loading;
+        private bool _Loaded;
+        private int _Start;
+        private int _Size;
+        private Complex[][] _Data;
+        private TNode _LeftSubNode;
+        private TNode _RightSubNode;
+    }
+
+    /// <summary>
+    /// A simple concrete spectrogram node. Also contains functions related to spectrogram nodes and trees.
+    /// </summary>
+    public class SpectrogramNode : SpectrogramNode<SpectrogramNode>
+    {
+        /// <summary>
+        /// Gets the size of the root node needed to contain all the samples for a source of the given size.
+        /// </summary>
+        public static int GetRootNodeSize(int SourceSize)
+        {
+            SourceSize--;
+            SourceSize |= SourceSize >> 1;
+            SourceSize |= SourceSize >> 2;
+            SourceSize |= SourceSize >> 4;
+            SourceSize |= SourceSize >> 8;
+            SourceSize |= SourceSize >> 16;
+            SourceSize++;
+            return SourceSize;
+        }
     }
 }

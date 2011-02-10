@@ -13,29 +13,28 @@ namespace MD.GUI
     /// Handles textures and resources needed to create a visual representation of data that shows the correlation 
     /// between two independant variables and a dependant variable.
     /// </summary>
-    public class Plot : IDisposable
+    public class Plot : Graph
     {
         public Plot(PlotData Data)
         {
             this._Data = Data;
 
-            this._Gradient = new Gradient(
-                Color.RGB(1.0, 1.0, 1.0),
-                Color.RGB(0.5, 0.0, 0.0),
-                new Gradient.Stop[]
-                {
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 1.0), 0.35),
-                    new Gradient.Stop(Color.RGB(0.0, 1.0, 0.0), 0.5),
-                    new Gradient.Stop(Color.RGB(1.0, 1.0, 0.0), 0.6),
-                    new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
-                });
-            this._Multiplier = 400.0;
+            this._Gradient = DefaultGradient;
+            this._Multiplier = 50.0;
             this._LoadPool = new ThreadPool(this._NextTask);
-            this._LoadPool.TargetThreadAmount = 3;
+            this._LoadPool.ThreadAmount = 3;
 
             Rectangle domain = Data.Domain;
             this._LastWindow = domain;
             this._MainNode = PlotNode._CreateLoading(Data.GetZone(domain));
+        }
+
+        public override Rectangle Domain
+        {
+            get
+            {
+                return this._Data.Domain;
+            }
         }
 
         /// <summary>
@@ -43,7 +42,7 @@ namespace MD.GUI
         /// </summary>
         /// <param name="Size">The size of the renderable area.</param>
         /// <param name="Window">The area currently seen in the plot.</param>
-        public void Render(GUIRenderContext Context, Point Size, Rectangle Window)
+        public override void Render(GUIRenderContext Context, Point Size, Rectangle Window)
         {
             Context.PushClip(new Rectangle(Size));
             if(this._MainNode != null)
@@ -58,20 +57,12 @@ namespace MD.GUI
         /// with the GL context used by render, as textures may need to be created.
         /// </summary>
         /// <param name="Window">The area currently seen in the plot.</param>
-        public void Update(Rectangle Window, double Time)
+        public override void Update(Rectangle Window, double Time)
         {
             this._LastWindow = Window;
 
             // Update zones
             this._UpdateNode(this._MainNode, Window, Time);
-
-            // Handle signalling for thread pool
-            this._SignalTime--;
-            if (this._SignalTime < 0)
-            {
-                this._SignalTime = 100;
-                this._LoadPool.Signal();
-            }
         }
 
         private void _UpdateNode(PlotNode Node, Rectangle Window, double Time)
@@ -86,6 +77,52 @@ namespace MD.GUI
                     this._UpdateNode(subnode, Window, Time);
                 }
             }
+        }
+
+        /// <summary>
+        /// Gets the default gradient for plots.
+        /// </summary>
+        public static readonly Gradient DefaultGradient = new Gradient(
+                Color.RGB(1.0, 1.0, 1.0),
+                Color.RGB(0.5, 0.0, 0.0),
+                new Gradient.Stop[]
+                {
+                    new Gradient.Stop(Color.RGB(0.0, 1.0, 1.0), 0.35),
+                    new Gradient.Stop(Color.RGB(0.0, 1.0, 0.0), 0.5),
+                    new Gradient.Stop(Color.RGB(1.0, 1.0, 0.0), 0.6),
+                    new Gradient.Stop(Color.RGB(1.0, 0.0, 0.0), 0.85),
+                });
+
+        /// <summary>
+        /// Creates a texture for a set of data in a plot.
+        /// </summary>
+        public static int CreateTexture(int Width, int Height, double[] Data, double Multiplier, Gradient Gradient)
+        {
+            byte[] pdat = new byte[Width * Height * 4];
+            for (int i = 0; i < Data.Length; i++)
+            {
+                double val = Data[i];
+                val *= Multiplier;
+                val = Math.Min(val, 1.0);
+                Color col = Gradient.GetColor(val);
+                byte r = (byte)(col.R * 255.0);
+                byte g = (byte)(col.G * 255.0);
+                byte b = (byte)(col.B * 255.0);
+                pdat[i * 4 + 0] = b;
+                pdat[i * 4 + 1] = g;
+                pdat[i * 4 + 2] = r;
+                pdat[i * 4 + 3] = 255;
+            }
+
+            int id = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, id);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, Width, Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pdat);
+            GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
+            return id;
         }
 
         /// <summary>
@@ -121,7 +158,7 @@ namespace MD.GUI
             }
         }
 
-        public void Dispose()
+        public override void OnDispose()
         {
             this._MainNode._Delete();
         }
@@ -137,7 +174,7 @@ namespace MD.GUI
             {
                 next = this._MainNode._NextLoad(this._LastWindow, out priority);
             }
-            if (next != null && priority > 0.001)
+            if (next != null && priority > 0.01)
             {
                 return delegate
                 {
@@ -155,7 +192,6 @@ namespace MD.GUI
             }
         }
 
-        private int _SignalTime;
         private Rectangle _LastWindow;
         private PlotData _Data;
         private PlotNode _MainNode;
@@ -416,31 +452,7 @@ namespace MD.GUI
             {
                 GL.DeleteTexture(this._Texture);
             }
-            byte[] pdat = new byte[this._Width * this._Height * 4];
-            for (int i = 0; i < this._Data.Length; i++)
-            {
-                double val = this._Data[i];
-                val *= Multiplier;
-                val = Math.Min(val, 1.0);
-                Color col = Gradient.GetColor(val);
-                byte r = (byte)(col.R * 255.0);
-                byte g = (byte)(col.G * 255.0);
-                byte b = (byte)(col.B * 255.0);
-                pdat[i * 4 + 0] = b;
-                pdat[i * 4 + 1] = g;
-                pdat[i * 4 + 2] = r;
-                pdat[i * 4 + 3] = 255;
-            }
-
-            int id = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, id);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, this._Width, this._Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pdat);
-            GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, (float)TextureEnvMode.Modulate);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (float)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (float)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
-            this._Texture = id;
+            this._Texture = Plot.CreateTexture(this._Width, this._Height, this._Data, Multiplier, Gradient);
             this._TextureNeedUpdate = false;
         }
 

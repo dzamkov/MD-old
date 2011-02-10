@@ -38,7 +38,7 @@ namespace MD.GUI
                                 AudioContext ac = new AudioContext();
                                 MemoryAudioSource mas = new MP3AudioFeed(file).Copy(4096, 4096 * 100);
 
-                                Spectrogram sp = new Spectrogram(mas);
+                                SpectrogramView sp = new SpectrogramView(mas);
                                 clientarea.Client = sp;
 
                                 AudioOutput ao = new AudioOutput(mas.Play);

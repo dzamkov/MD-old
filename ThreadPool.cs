@@ -13,23 +13,13 @@ namespace MD
         {
             this._NextTask = NextTask;
             this._TargetThreadAmount = 5;
+            this._WaitTime = 200;
         }
 
         /// <summary>
-        /// Gets the current amount of threads running in the thread pool.
+        /// Gets or sets the amount of threads running in the thread pool.
         /// </summary>
         public int ThreadAmount
-        {
-            get
-            {
-                return this._ThreadAmount;
-            }
-        }
-
-        /// <summary>
-        /// Gets or sets the maximum amount of threads that can run in the thread pool at a time.
-        /// </summary>
-        public int TargetThreadAmount
         {
             get
             {
@@ -38,17 +28,18 @@ namespace MD
             set
             {
                 this._TargetThreadAmount = value;
+                this.Start();
             }
         }
 
         /// <summary>
-        /// Informs the thread pool that another task has been created.
+        /// Creates all threads requested by the thread pool.
         /// </summary>
-        public void Signal()
+        public void Start()
         {
             lock (this)
             {
-                if (this._ThreadAmount < this._TargetThreadAmount)
+                while (this._ThreadAmount < this._TargetThreadAmount)
                 {
                     this._ThreadAmount++;
                     Thread th = new Thread(this._ThreadLoop);
@@ -58,18 +49,37 @@ namespace MD
             }
         }
 
+        /// <summary>
+        /// Gets or sets the amount of time, in milliseconds, a thread must wait if it didn't get a task.
+        /// </summary>
+        public int TaskWaitTime
+        {
+            get
+            {
+                return this._WaitTime;
+            }
+            set
+            {
+                this._WaitTime = value;
+            }
+        }
+
         private void _ThreadLoop()
         {
             while (true)
             {
+                lock (this)
+                {
+                    if (this._ThreadAmount > this._TargetThreadAmount)
+                    {
+                        return;
+                    }
+                }
+
                 Action task = this._NextTask();
                 if (task == null)
                 {
-                    lock (this)
-                    {
-                        this._ThreadAmount--;
-                    }
-                    return;
+                    Thread.Sleep(this._WaitTime);
                 }
                 else
                 {
@@ -79,6 +89,7 @@ namespace MD
         }
 
         private NextTaskHandler _NextTask;
+        private int _WaitTime;
         private int _ThreadAmount;
         private int _TargetThreadAmount;
     }

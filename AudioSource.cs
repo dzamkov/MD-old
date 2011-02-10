@@ -48,6 +48,29 @@ namespace MD
         }
 
         /// <summary>
+        /// Reads some data (as double samples) into the specified output array as in ReadDouble. The read array does not have to be completely in the
+        /// sample area. Samples requested that are outside the sampling area are left alone.
+        /// </summary>
+        public void ReadDoublePad(int Position, int Amount, double[] Output, int Offset)
+        {
+            int size = this.Size;
+            if (Position < 0)
+            {
+                Amount += Position;
+                Offset -= Position * this.Channels;
+                Position = 0;
+            }
+            if (Amount + Position >= size)
+            {
+                Amount = size - Position;
+            }
+            if (Amount > 0)
+            {
+                this.ReadDouble(Position, Amount, Output, Offset);
+            }
+        }
+
+        /// <summary>
         /// Gets the size of the audio source in samples.
         /// </summary>
         public abstract int Size { get; }

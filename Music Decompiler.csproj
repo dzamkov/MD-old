@@ -62,6 +62,7 @@
     <Compile Include="AudioSource.cs" />
     <Compile Include="Complex.cs" />
     <Compile Include="FFT.cs" />
+    <Compile Include="GUI\Graph.cs" />
     <Compile Include="GUI\MainWindow.cs" />
     <Compile Include="GUI\Spectrogram.cs" />
     <Compile Include="GUI\View.cs" />
