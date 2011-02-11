@@ -57,12 +57,13 @@ namespace MD.GUI
         {
             this._Source = Source;
             this._TexturesPerNode = 4;
-            this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.028, this._Source.SampleRate, 2048);
+            this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.020, this._Source.SampleRate, 4096);
             this._Root = new _RenderNode(this._TexturesPerNode);
-            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 32);
+            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 16);
 
             this._LastWindow = this.Domain;
             this._LoadPool = new ThreadPool(this._NextTask);
+            this._LoadPool.ThreadAmount = 1;
             this._LoadPool.Start();
         }
 
@@ -112,7 +113,7 @@ namespace MD.GUI
                         texdata[x + y * w] = data[x][(fh - y - o - 1)].Abs;
                     }
                 }
-                return this.Textures[Texture] = Plot.CreateTexture(w, h, texdata, 200.0, Plot.DefaultGradient);
+                return this.Textures[Texture] = Plot.CreateTexture(w, h, texdata, 100.0, Plot.DefaultGradient);
             }
 
             /// <summary>
@@ -163,23 +164,35 @@ namespace MD.GUI
             /// <summary>
             /// Gets the next node that needs loading.
             /// </summary>
-            public _RenderNode NextToLoad(Rectangle LastWindow, AudioSource Source)
+            public _RenderNode NextToLoad(Rectangle LastWindow, AudioSource Source, out double Priority)
             {
+                Priority = 0.0;
                 _RenderNode res = null;
                 if (!this.Loaded)
                 {
-                    if (_Visibility(this.GetArea(Source.SampleRate), LastWindow) > 0.1)
-                    {
-                        res = this;
-                    }
+                    double vis = _Visibility(this.GetArea(Source.SampleRate), LastWindow);
+                    res = this;
+                    Priority = vis;
                 }
                 if (this.LeftSubNode != null)
                 {
-                    res = res ?? this.LeftSubNode.NextToLoad(LastWindow, Source);
+                    double tp;
+                    _RenderNode t = this.LeftSubNode.NextToLoad(LastWindow, Source, out tp);
+                    if (tp > Priority)
+                    {
+                        Priority = tp;
+                        res = t;
+                    }
                 }
                 if (this.RightSubNode != null)
                 {
-                    res = res ?? this.RightSubNode.NextToLoad(LastWindow, Source);
+                    double tp;
+                    _RenderNode t = this.RightSubNode.NextToLoad(LastWindow, Source, out tp);
+                    if (tp > Priority)
+                    {
+                        Priority = tp;
+                        res = t;
+                    }
                 }
                 return res;
             }
@@ -205,8 +218,9 @@ namespace MD.GUI
         /// </summary>
         private Action _NextTask()
         {
-            _RenderNode rn = this._Root.NextToLoad(this._LastWindow, this._Source);
-            if (rn != null)
+            double priority;
+            _RenderNode rn = this._Root.NextToLoad(this._LastWindow, this._Source, out priority);
+            if (rn != null && priority > 0.01)
             {
                 return delegate
                 {
@@ -327,7 +341,7 @@ namespace MD.GUI
     {
         public SpectrogramNode()
         {
-
+            this._Loading = true;
         }
 
         /// <summary>
@@ -346,9 +360,11 @@ namespace MD.GUI
         /// <param name="TimeSamples">The amount of time samples in a node.</param>
         public void Fill(int Start, int Size, int TimeSamples)
         {
+            this._Data = new Complex[TimeSamples][];
             this._Start = Start;
             this._Size = Size;
-            this._Data = new Complex[TimeSamples][];
+            this._Loaded = false;
+            this._Loading = false;
         }
 
         /// <summary>
