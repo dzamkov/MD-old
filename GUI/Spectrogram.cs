@@ -57,9 +57,9 @@ namespace MD.GUI
         {
             this._Source = Source;
             this._TexturesPerNode = 4;
-            this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.020, this._Source.SampleRate, 4096);
+            this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.028, this._Source.SampleRate, 4096);
             this._Root = new _RenderNode(this._TexturesPerNode);
-            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 64);
+            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 128);
 
             this._LastWindow = this.Domain;
             this._LoadPool = new ThreadPool(this._NextTask);
@@ -113,7 +113,7 @@ namespace MD.GUI
                         texdata[x + y * w] = data[x][(fh - y - o - 1)].Abs;
                     }
                 }
-                return this.Textures[Texture] = Plot.CreateTexture(w, h, texdata, 100.0, Plot.DefaultGradient);
+                return this.Textures[Texture] = Plot.CreateTexture(w, h, texdata, 400.0, Plot.DefaultGradient);
             }
 
             /// <summary>
@@ -124,30 +124,28 @@ namespace MD.GUI
                 if (this.Loaded)
                 {
                     bool needrender = (this.LeftSubNode == null || !this.LeftSubNode.Loaded) || (this.RightSubNode == null || !this.RightSubNode.Loaded);
-                    Rectangle area = this.GetArea(Source.SampleRate);
-                    Point texturesize = area.Size; texturesize.Y /= this.Textures.Length;
-                    for (int t = 0; t < this.Textures.Length; t++)
+                    if (needrender)
                     {
-                        Rectangle texturerect = new Rectangle(new Point(area.Location.X, area.Location.Y + area.Size.Y - texturesize.Y * (t + 1)), texturesize);
-                        if (needrender && Window.Intersects(texturerect))
+                        Rectangle area = this.GetArea(Source.SampleRate);
+                        Point texturesize = area.Size; texturesize.Y /= this.Textures.Length;
+                        for (int t = 0; t < this.Textures.Length; t++)
                         {
-                            int tex = this.Textures[t];
-                            if (tex == 0)
+                            Rectangle texturerect = new Rectangle(new Point(area.Location.X, area.Location.Y + area.Size.Y - texturesize.Y * (t + 1)), texturesize);
+                            if (Window.Intersects(texturerect))
                             {
-                                tex = this.CreateTexture(t, Source, SpectrumWindow);
+                                int tex = this.Textures[t];
+                                if (tex == 0)
+                                {
+                                    tex = this.CreateTexture(t, Source, SpectrumWindow);
+                                }
+                                Rectangle rel = Window.ToRelative(texturerect);
+                                rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
+                                rel = rel.Scale(Size);
+                                Context.DrawTexture(tex, rel);
                             }
-                            Rectangle rel = Window.ToRelative(texturerect);
-                            rel.Location.Y = 1.0 - rel.Size.Y - rel.Location.Y;
-                            rel = rel.Scale(Size);
-                            Context.DrawTexture(tex, rel);
-                        }
-                        else
-                        {
-                            int tex = this.Textures[t];
-                            if (tex != 0)
+                            else
                             {
-                                GL.DeleteTexture(tex);
-                                this.Textures[t] = 0;
+                                int tex = this.Textures[t];
                             }
                         }
                     }
@@ -269,7 +267,9 @@ namespace MD.GUI
                 double exp = ((double)t / SampleRate) * iscale;
                 total += win[t] = Math.Exp(-exp * exp);
             }
-            double itotal = 1.0 / total;
+
+            // Make sure that all the values in the full window add up to one.
+            double itotal = 0.5 / total;
             for (int t = 0; t < Size; t++)
             {
                 win[t] *= itotal;
@@ -304,9 +304,23 @@ namespace MD.GUI
         }
 
         /// <summary>
+        /// Creates a precomputed table for the FFT operations needed to quickly produce samples.
+        /// </summary>
+        public static Complex[] PrecomputeFFTTable(int FullWindowSize)
+        {
+            Complex[] table = new Complex[FullWindowSize];
+            double c = -2.0 * Math.PI;
+            for (int i = 0; i < FullWindowSize; i++)
+            {
+                table[i] = new Complex(c * (double)i / (double)FullWindowSize).TimesI.Exp;
+            }
+            return table;
+        }
+
+        /// <summary>
         /// Calculates a spectrogram sample quickly. Requires the full window to be computed.
         /// </summary>
-        public static unsafe Complex[] CalculateSampleFast(AudioSource Source, double* FullWindow, int FullWindowSize, int Sample)
+        public static unsafe Complex[] CalculateSampleFast(AudioSource Source, double* FullWindow, Complex* PrecomputedFFT, int FullWindowSize, int Sample)
         {
             int c = Source.Channels;
             int hwinsize = FullWindowSize / 2;
@@ -321,7 +335,7 @@ namespace MD.GUI
             {
                 fixed (Complex* outputptr = output)
                 {
-                    _WindowFFT(inputptr, FullWindow, outputptr, FullWindowSize, 1, c);
+                    _WindowFFT(inputptr, FullWindow, outputptr, PrecomputedFFT, FullWindowSize, 1, c);
 
                     // The upper half of the output is redundant.
                     for (int t = 0; t < hwinsize; t++)
@@ -363,7 +377,7 @@ namespace MD.GUI
             private int _Channels;
         }
 
-        private static unsafe void _WindowFFT(double* Input, double* FullWindow, Complex* Output, int Samples, int Step, int Channels)
+        private static unsafe void _WindowFFT(double* Input, double* FullWindow, Complex* Output, Complex* PrecomputedFFT, int Samples, int Step, int Channels)
         {
             if (Samples == 1)
             {
@@ -373,13 +387,13 @@ namespace MD.GUI
             {
                 int hsamps = Samples / 2;
                 int dstep = Step * 2;
-                _WindowFFT(Input, FullWindow, Output, hsamps, dstep, Channels);
-                _WindowFFT(Input + (Step * Channels), FullWindow + Step, Output + hsamps, hsamps, dstep, Channels);
-                double c = -2.0 * Math.PI;
+                _WindowFFT(Input, FullWindow, Output, PrecomputedFFT, hsamps, dstep, Channels);
+                _WindowFFT(Input + (Step * Channels), FullWindow + Step, Output + hsamps, PrecomputedFFT, hsamps, dstep, Channels);
+                
                 for (int i = 0; i < hsamps; i++)
                 {
                     Complex t = Output[i];
-                    Complex e = new Complex(c * (double)i / (double)Samples).TimesI.Exp;
+                    Complex e = PrecomputedFFT[i * Step];
                     Complex es = e * Output[hsamps + i];
                     Output[i] = t + es;
                     Output[hsamps + i] = t - es;
@@ -474,6 +488,7 @@ namespace MD.GUI
             int cur = this._Start;
 
             int hwinsize = Window.Length;
+            int winsize = hwinsize * 2;
             double[] fullwindow = new double[hwinsize * 2];
             for (int t = 0; t < hwinsize; t++)
             {
@@ -481,15 +496,19 @@ namespace MD.GUI
                 fullwindow[t + hwinsize] = Window[t];
             }
 
-            fixed (double* fullwindowptr = fullwindow)
+            Complex[] ffttable = Spectrogram.PrecomputeFFTTable(winsize);
+            fixed (Complex* ffttableptr = ffttable)
             {
-                for (int t = 0; t < nodesamples; t++)
+                fixed (double* fullwindowptr = fullwindow)
                 {
-                    if (this._Data[t] == null)
+                    for (int t = 0; t < nodesamples; t++)
                     {
-                        this._Data[t] = Spectrogram.CalculateSampleFast(Source, fullwindowptr, hwinsize * 2, cur);
+                        if (this._Data[t] == null)
+                        {
+                            this._Data[t] = Spectrogram.CalculateSampleFast(Source, fullwindowptr, ffttableptr, hwinsize * 2, cur);
+                        }
+                        cur += step;
                     }
-                    cur += step;
                 }
             }
             this._Loaded = true;
