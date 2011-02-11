@@ -59,11 +59,11 @@ namespace MD.GUI
             this._TexturesPerNode = 4;
             this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.020, this._Source.SampleRate, 4096);
             this._Root = new _RenderNode(this._TexturesPerNode);
-            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 16);
+            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 64);
 
             this._LastWindow = this.Domain;
             this._LoadPool = new ThreadPool(this._NextTask);
-            this._LoadPool.ThreadAmount = 1;
+            this._LoadPool.ThreadAmount = 3;
             this._LoadPool.Start();
         }
 
@@ -123,12 +123,13 @@ namespace MD.GUI
             {
                 if (this.Loaded)
                 {
+                    bool needrender = (this.LeftSubNode == null || !this.LeftSubNode.Loaded) || (this.RightSubNode == null || !this.RightSubNode.Loaded);
                     Rectangle area = this.GetArea(Source.SampleRate);
                     Point texturesize = area.Size; texturesize.Y /= this.Textures.Length;
                     for (int t = 0; t < this.Textures.Length; t++)
                     {
                         Rectangle texturerect = new Rectangle(new Point(area.Location.X, area.Location.Y + area.Size.Y - texturesize.Y * (t + 1)), texturesize);
-                        if (Window.Intersects(texturerect))
+                        if (needrender && Window.Intersects(texturerect))
                         {
                             int tex = this.Textures[t];
                             if (tex == 0)
@@ -143,11 +144,11 @@ namespace MD.GUI
                         else
                         {
                             int tex = this.Textures[t];
-                            /*if (tex != 0)
+                            if (tex != 0)
                             {
                                 GL.DeleteTexture(tex);
                                 this.Textures[t] = 0;
-                            }*/
+                            }
                         }
                     }
                     if (this.LeftSubNode != null)
@@ -220,11 +221,11 @@ namespace MD.GUI
         {
             double priority;
             _RenderNode rn = this._Root.NextToLoad(this._LastWindow, this._Source, out priority);
-            if (rn != null && priority > 0.01)
+            if (rn != null && priority > 0.1)
             {
                 return delegate
                 {
-                    rn.Load(this._Source, this._SpectrumWindow);
+                    rn.LoadFast(this._Source, this._SpectrumWindow);
                     rn.Split(new _RenderNode(this._TexturesPerNode), new _RenderNode(this._TexturesPerNode));
                 };
             }
@@ -303,6 +304,37 @@ namespace MD.GUI
         }
 
         /// <summary>
+        /// Calculates a spectrogram sample quickly. Requires the full window to be computed.
+        /// </summary>
+        public static unsafe Complex[] CalculateSampleFast(AudioSource Source, double* FullWindow, int FullWindowSize, int Sample)
+        {
+            int c = Source.Channels;
+            int hwinsize = FullWindowSize / 2;
+            int winsize = FullWindowSize;
+            Complex[] output = new Complex[FullWindowSize];
+            double[] data = new double[FullWindowSize * c];
+            Source.ReadDoublePad(Sample - FullWindowSize / 2, FullWindowSize, data, 0);
+
+            Complex[] houtput = new Complex[winsize];
+
+            fixed (double* inputptr = data)
+            {
+                fixed (Complex* outputptr = output)
+                {
+                    _WindowFFT(inputptr, FullWindow, outputptr, FullWindowSize, 1, c);
+
+                    // The upper half of the output is redundant.
+                    for (int t = 0; t < hwinsize; t++)
+                    {
+                        houtput[t] = output[t];
+                    }
+                }
+            }
+
+            return houtput;
+        }
+
+        /// <summary>
         /// Input signal for a FFT on a windowed portion of the source data.
         /// </summary>
         private class _WindowedSignal : IComplexSignal
@@ -329,6 +361,30 @@ namespace MD.GUI
             private double[] _Window;
             private int _HWindowSize;
             private int _Channels;
+        }
+
+        private static unsafe void _WindowFFT(double* Input, double* FullWindow, Complex* Output, int Samples, int Step, int Channels)
+        {
+            if (Samples == 1)
+            {
+                *Output = (*Input) * (*FullWindow);
+            }
+            else
+            {
+                int hsamps = Samples / 2;
+                int dstep = Step * 2;
+                _WindowFFT(Input, FullWindow, Output, hsamps, dstep, Channels);
+                _WindowFFT(Input + (Step * Channels), FullWindow + Step, Output + hsamps, hsamps, dstep, Channels);
+                double c = -2.0 * Math.PI;
+                for (int i = 0; i < hsamps; i++)
+                {
+                    Complex t = Output[i];
+                    Complex e = new Complex(c * (double)i / (double)Samples).TimesI.Exp;
+                    Complex es = e * Output[hsamps + i];
+                    Output[i] = t + es;
+                    Output[hsamps + i] = t - es;
+                }
+            }
         }
     }
 
@@ -403,6 +459,46 @@ namespace MD.GUI
         /// <summary>
         /// Loads the data for this node if it is not already loaded. This call is thread safe.
         /// </summary>
+        public unsafe void LoadFast(AudioSource Source, double[] Window)
+        {
+            lock (this)
+            {
+                if (this.Loading || this.Loaded)
+                {
+                    return;
+                }
+                this._Loading = true;
+            }
+            int nodesamples = this._Data.Length;
+            int step = this._Size / nodesamples;
+            int cur = this._Start;
+
+            int hwinsize = Window.Length;
+            double[] fullwindow = new double[hwinsize * 2];
+            for (int t = 0; t < hwinsize; t++)
+            {
+                fullwindow[t] = Window[hwinsize - t - 1];
+                fullwindow[t + hwinsize] = Window[t];
+            }
+
+            fixed (double* fullwindowptr = fullwindow)
+            {
+                for (int t = 0; t < nodesamples; t++)
+                {
+                    if (this._Data[t] == null)
+                    {
+                        this._Data[t] = Spectrogram.CalculateSampleFast(Source, fullwindowptr, hwinsize * 2, cur);
+                    }
+                    cur += step;
+                }
+            }
+            this._Loaded = true;
+            this._Loading = false;
+        }
+
+        /// <summary>
+        /// Loads the data for this node if it is not already loaded. This call is thread safe.
+        /// </summary>
         public void Load(AudioSource Source, double[] Window)
         {
             lock (this)
@@ -416,6 +512,8 @@ namespace MD.GUI
             int nodesamples = this._Data.Length;
             int step = this._Size / nodesamples;
             int cur = this._Start;
+
+            int hwinsize = Window.Length;
             for (int t = 0; t < nodesamples; t++)
             {
                 if (this._Data[t] == null)

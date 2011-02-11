@@ -32,6 +32,7 @@ namespace MD
                 }
             }
         }
+
         /// <summary>
         /// Performs a fourier transform on the input data. Samples must be a power of two.
         /// </summary>
