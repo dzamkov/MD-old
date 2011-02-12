@@ -59,7 +59,7 @@ namespace MD.GUI
             this._TexturesPerNode = 4;
             this._SpectrumWindow = Spectrogram.CreateGaborWindow(0.028, this._Source.SampleRate, 4096);
             this._Root = new _RenderNode(this._TexturesPerNode);
-            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 128);
+            this._Root.Fill(0, SpectrogramNode.GetRootNodeSize(this._Source.Size), 64);
 
             this._LastWindow = this.Domain;
             this._LoadPool = new ThreadPool(this._NextTask);
