@@ -61,6 +61,7 @@
     <Compile Include="AudioFeed.cs" />
     <Compile Include="AudioSource.cs" />
     <Compile Include="Complex.cs" />
+    <Compile Include="DiscreteSignal.cs" />
     <Compile Include="FFT.cs" />
     <Compile Include="GUI\Graph.cs" />
     <Compile Include="GUI\MainWindow.cs" />
