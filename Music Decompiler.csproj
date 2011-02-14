@@ -59,6 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AudioFeed.cs" />
+    <Compile Include="AudioSignal.cs" />
     <Compile Include="AudioSource.cs" />
     <Compile Include="Complex.cs" />
     <Compile Include="DiscreteSignal.cs" />

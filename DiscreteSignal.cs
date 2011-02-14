@@ -34,6 +34,11 @@ namespace MD
     public abstract class MultiDiscreteSignal<TSample> : DiscreteSignal<TSample[]>
     {
         /// <summary>
+        /// Gets the amount of channels in this signal.
+        /// </summary>
+        public abstract int Channels { get; }
+
+        /// <summary>
         /// Gets a signal for one of the channels in this signal.
         /// </summary>
         public virtual DiscreteSignal<TSample> GetChannel(int Channel)
